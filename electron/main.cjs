@@ -751,8 +751,11 @@ function trackGame() {
     activeIsOverlay = Boolean(fg && !activeIsGame && n.windowPid(fg) === process.pid);
   } catch {
   }
+  // The HUD belongs to the detected game window, not only to the current
+  // foreground HWND. Fullscreen/remote-session wrappers can own foreground
+  // briefly even while the game remains visible, which previously hid the HUD.
   const shouldShow =
-    dashOn || activeIsGame || activeIsOverlay || streamerModeActive || Date.now() < bootGraceUntil;
+    dashOn || gameHwnd != null || activeIsOverlay || streamerModeActive || Date.now() < bootGraceUntil;
   overlayFocusActive = shouldShow;
 
   if (shouldShow) {

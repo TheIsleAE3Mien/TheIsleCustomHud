@@ -171,13 +171,13 @@ remembered.
 
 ### Server editions
 
-The committed `build.config.json` is generic and deliberately contains no
-GameMonitoring server ID. Edition overrides live under `editions/` and are only
-copied to the temporary, ignored `build.edition.json` during an edition build.
+The committed `build.config.json` on `main` is generic and deliberately contains
+no GameMonitoring server ID. Server-specific configuration is maintained on a
+separate edition branch instead of being embedded in generic releases.
 
-The AE3Miền edition uses `editions/ae3mien.json` with GameMonitoring server ID
-`14040695`. It displays the full server name, online/offline state, player count,
-slot limit, and snapshot age. The client polls every 30 seconds, but
+The `ae3mien` branch uses GameMonitoring server ID `14040695`. It displays the
+full server name, online/offline state, player count, slot limit, and snapshot
+age. The client polls every 30 seconds, but
 GameMonitoring supplies monitored snapshots rather than a realtime stream, so
 the displayed count can lag behind the game by several minutes. The widget
 shows `Dữ liệu X phút trước` from the API `last_update` value.
@@ -205,11 +205,14 @@ creates the GitHub Release and attaches the `.exe`, update metadata, and
 blockmap. You can also run the workflow manually to produce a downloadable
 Actions artifact without publishing a Release.
 
-AE3Miền-only releases use a tag such as `v0.5.0-ae3mien.1`. Its base version
-must match `package.json`. The workflow injects `editions/ae3mien.json`, builds
-the separate `ae3mien` updater channel, marks the GitHub Release as a
-pre-release, and labels it **Anh Em 3 Miền Only**. Generic releases never receive
-that server ID or widget.
+AE3Miền-only releases are created from the `ae3mien` branch with a tag such as
+`v0.5.1-ae3mien.1`. That branch builds the separate `ae3mien` updater channel,
+marks the GitHub Release as a pre-release, and labels it **Anh Em 3 Miền Only**.
+Generic releases never receive that server ID or widget.
+
+Server-specific development is maintained on the `ae3mien` branch. The `main`
+branch remains the generic edition with `gameMonitoringServerId: null`; the
+`ae3mien` branch enables the AE3Miền server ID and updater channel directly.
 
 ## Syncing upstream
 
