@@ -1,0 +1,50 @@
+{
+  "serverName": "TheIsleVNHud",
+  "overlayLabel": "",
+  "apiBaseUrl": "https://islepilot.eu",
+  "language": "vi",
+  "statsStyle": "circles",
+  "dashKey": "F8",
+  "radarShape": "square",
+  "accentColor": "#7cf2a6",
+  "defaultUserSettings": {
+    "statsStyle": "circles",
+    "hudTransparent": true,
+    "opacity": 1,
+    "layout": {
+      "main": { "x": 767, "y": 293 },
+      "w_radar": { "x": 0, "y": 0, "scale": 1.0371428571428571 },
+      "w_prime": { "x": 0, "y": 355, "scale": 1.7298652515570045 },
+      "w_stats": { "x": 862, "y": 1225, "scale": 2.5 },
+      "w_heart": { "x": 2277, "y": 1016, "scale": 1 },
+      "w_compass": { "x": 370.3125, "y": 0, "scale": 0.9397623003819859 }
+    },
+    "panels": {
+      "heart": true,
+      "compass": true,
+      "radar": true,
+      "stats": true,
+      "prime": true
+    },
+    "theme": {
+      "accent": "#7cf2a6",
+      "stat": {
+        "health": "#ff5a5a",
+        "stamina": "#ffcf4a",
+        "food": "#79f2a6",
+        "water": "#5ab6ff"
+      }
+    },
+    "radarSize": 350,
+    "radarRange": 1,
+    "radarLabels": true,
+    "radarShape": "square",
+    "radarOpen": false,
+    "cursorEnabled": false,
+    "cursorKey": "Insert",
+    "cursorMode": "toggle",
+    "dashKey": "F8",
+    "streamerMode": false,
+    "compatMode": true
+  }
+}

@@ -6,7 +6,7 @@ Upstream work:
   Source: https://github.com/reversum/isle-overlay
 
 Custom changes:
-  TheIsleCustomHud
+  TheIsleVNHud
   Copyright (c) 2026 TheIsleAE3Mien and its contributors.
 
 The upstream repository did not include a license grant when its source was
@@ -22,4 +22,3 @@ before public redistribution or other use that requires permission.
 
 Any independently copyrightable custom changes are also all rights reserved
 unless their author provides a separate written license.
-

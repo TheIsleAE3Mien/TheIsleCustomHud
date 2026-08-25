@@ -13,6 +13,7 @@ const GetWindowThreadProcessId = user32.func(
 );
 const IsWindow = user32.func("int __stdcall IsWindow(HWND hwnd)");
 const IsWindowVisible = user32.func("int __stdcall IsWindowVisible(HWND hwnd)");
+const SetForegroundWindow = user32.func("int __stdcall SetForegroundWindow(HWND hwnd)");
 const GetWindowTextW = user32.func(
   "int __stdcall GetWindowTextW(HWND hwnd, _Out_ char16 *buf, int max)",
 );
@@ -98,6 +99,10 @@ function isSameWindow(a, b) {
   return koffi.address(a) === koffi.address(b);
 }
 
+function focusWindow(hwnd) {
+  return Boolean(hwnd && IsWindow(hwnd) && SetForegroundWindow(hwnd));
+}
+
 module.exports = {
   GetForegroundWindow,
   IsWindow,
@@ -108,4 +113,5 @@ module.exports = {
   findWindow,
   hwndFromBuffer,
   isSameWindow,
+  focusWindow,
 };

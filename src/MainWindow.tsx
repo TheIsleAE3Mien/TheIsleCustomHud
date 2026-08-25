@@ -7,6 +7,8 @@ import { SkinEditorTab } from "./SkinEditorTab";
 import { SkinShopTab } from "./SkinShopTab";
 import { MapEditorTab } from "./MapEditorTab";
 import { AdminTab } from "./AdminTab";
+import { clampToViewport } from "./drag";
+import { tr, type AppLanguage } from "./i18n";
 import type { OverlaySettings, OverlayTheme, PlayerMe } from "./preload";
 
 export type TabKey = "profile" | "livemap" | "skin" | "garage" | "mapedit" | "dinoshop" | "skinshop" | "admin";
@@ -222,25 +224,82 @@ function MiniStat({
   );
 }
 
-export function StatsWidget({ me, theme }: { me: PlayerMe | null; theme: OverlayTheme }) {
+function CircularStat({
+  label,
+  value,
+  max,
+  color,
+}: {
+  label: string;
+  value?: number | null;
+  max?: number | null;
+  color: string;
+}) {
+  const v = typeof value === "number" ? value : null;
+  const m = typeof max === "number" && max > 0 ? max : null;
+  const pct = v != null && m != null ? Math.max(0, Math.min(100, (v / m) * 100)) : null;
+  const shown = pct != null ? Math.round(pct) : v != null ? Math.round(v) : null;
+  return (
+    <div className="circleStat" style={{ ["--c" as string]: color }} aria-label={`${label} ${shown ?? 0}%`}>
+      <div className="circleGauge">
+        <svg viewBox="0 0 60 60" aria-hidden="true">
+          <circle className="circleTrack" cx="30" cy="30" r="25" pathLength="100" />
+          <circle className="circleFill" cx="30" cy="30" r="25" pathLength="100" strokeDasharray={`${pct ?? 0} 100`} />
+        </svg>
+        <span>{shown != null ? `${shown}%` : "—"}</span>
+      </div>
+      <div className="circleLabel">{label}</div>
+    </div>
+  );
+}
+
+export function StatsWidget({
+  me,
+  theme,
+  styleMode = "bars",
+  language = "en",
+}: {
+  me: PlayerMe | null;
+  theme: OverlayTheme;
+  styleMode?: "bars" | "circles";
+  language?: AppLanguage;
+}) {
+  const t = (text: string) => tr(language, text);
+  if (styleMode === "circles") {
+    return (
+      <div className="hud circularStats dragHandle">
+        {me?.hasData ? (
+          <>
+            <CircularStat label={t("Growth")} value={me.growth != null ? me.growth * 100 : null} max={100} color="#4ade80" />
+            <CircularStat label={t("Health")} value={me.health} max={me.maxHealth} color={theme.stat.health} />
+            <CircularStat label={t("Hunger")} value={me.hunger} max={me.maxHunger} color={theme.stat.food} />
+            <CircularStat label={t("Thirst")} value={me.thirst} max={me.maxThirst} color={theme.stat.water} />
+            <CircularStat label={t("Stamina")} value={me.stamina} max={me.maxStamina} color={theme.stat.stamina} />
+          </>
+        ) : (
+          <div className="hudEmpty">{t("No live dino")}</div>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="hud statsWidget dragHandle">
       <div className="hudTitle">
-        <span className="hudTitleName">{me?.hasData && me.species ? me.species : "Stats"}</span>
+        <span className="hudTitleName">{me?.hasData && me.species ? me.species : t("Stats")}</span>
         {me?.growth != null ? (
           <span className="hudTitleBadge">{Math.round(me.growth * 100)}%</span>
         ) : null}
       </div>
       {me?.hasData ? (
         <>
-          <MiniStat icon="health" label="Health" value={me.health} max={me.maxHealth} color={theme.stat.health} />
-          <MiniStat icon="stamina" label="Stamina" value={me.stamina} max={me.maxStamina} color={theme.stat.stamina} />
-          <MiniStat icon="hunger" label="Hunger" value={me.hunger} max={me.maxHunger} color={theme.stat.food} />
-          <MiniStat icon="thirst" label="Thirst" value={me.thirst} max={me.maxThirst} color={theme.stat.water} />
-          <MiniStat icon="growth" label="Growth" value={me.growth != null ? me.growth * 100 : null} max={100} color="#4ade80" />
+          <MiniStat icon="health" label={t("Health")} value={me.health} max={me.maxHealth} color={theme.stat.health} />
+          <MiniStat icon="stamina" label={t("Stamina")} value={me.stamina} max={me.maxStamina} color={theme.stat.stamina} />
+          <MiniStat icon="hunger" label={t("Hunger")} value={me.hunger} max={me.maxHunger} color={theme.stat.food} />
+          <MiniStat icon="thirst" label={t("Thirst")} value={me.thirst} max={me.maxThirst} color={theme.stat.water} />
+          <MiniStat icon="growth" label={t("Growth")} value={me.growth != null ? me.growth * 100 : null} max={100} color="#4ade80" />
         </>
       ) : (
-        <div className="hudEmpty">no live dino</div>
+        <div className="hudEmpty">{t("No live dino")}</div>
       )}
     </div>
   );
@@ -258,7 +317,7 @@ export function HeartHud({ me }: { me: PlayerMe | null }) {
   const pct = v != null && m != null ? Math.max(0, Math.min(1, v / m)) : 0;
   const fillY = HEART_BOTTOM - pct * (HEART_BOTTOM - HEART_TOP);
   return (
-    <div className="heartHud" title={`Health ${Math.round(pct * 100)}%`}>
+    <div className="heartHud dragHandle" title={`Health ${Math.round(pct * 100)}%`}>
       <svg viewBox="0 0 100 88" aria-hidden="true">
         <defs>
           <clipPath id="heartClip">
@@ -276,13 +335,13 @@ export function HeartHud({ me }: { me: PlayerMe | null }) {
   );
 }
 
-function dinoStage(me: PlayerMe): string {
+function dinoStage(me: PlayerMe, language: AppLanguage): string {
   if (me.prime?.elder) return "Prime Elder";
   const g = me.growth ?? 0;
-  if (g >= 0.99) return "Adult";
-  if (g >= 0.5) return "Sub-Adult";
-  if (g >= 0.25) return "Juvenile";
-  return "Hatchling";
+  if (g >= 0.99) return tr(language, "Adult");
+  if (g >= 0.5) return tr(language, "Sub-Adult");
+  if (g >= 0.25) return tr(language, "Juvenile");
+  return tr(language, "Hatchling");
 }
 
 const GROWTH_COLOR = "#4ade80";
@@ -292,18 +351,21 @@ function DashboardTab({
   theme,
   onGoto,
   supportOn,
+  language,
 }: {
   me: PlayerMe | null;
   theme: OverlayTheme;
   onGoto: (t: TabKey) => void;
   supportOn: boolean;
+  language: AppLanguage;
 }) {
+  const t = (text: string) => tr(language, text);
   const supportBtn = supportOn ? (
     <button className="supportBtn interactive-region" onClick={() => onGoto("admin")}>
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
       </svg>
-      Support
+      {t("Support")}
     </button>
   ) : null;
   if (!me?.hasData) {
@@ -313,8 +375,8 @@ function DashboardTab({
           <path d="M12 2 21 7v10l-9 5-9-5V7l9-5Z" />
           <path d="M12 12 21 7M12 12v10M12 12 3 7" />
         </svg>
-        <div className="noDataTtl">No live dino</div>
-        <div className="noDataSub">Spawn in on a server running the IslePilot plugin to see your stats.</div>
+        <div className="noDataTtl">{t("No live dino")}</div>
+        <div className="noDataSub">{t("No live dino available.")}</div>
         {supportBtn}
       </div>
     );
@@ -337,11 +399,11 @@ function DashboardTab({
             ) : null}
           </div>
           <div className="idRow">
-            <span className="idKey">Stage</span>
-            <span className="idVal">{dinoStage(me)}</span>
+            <span className="idKey">{t("Stage")}</span>
+            <span className="idVal">{dinoStage(me, language)}</span>
           </div>
           <div className="idRow">
-            <span className="idKey">Server</span>
+            <span className="idKey">{t("Server")}</span>
             <span className="idVal">{me.server ?? "—"}</span>
           </div>
           <div className="idRow">
@@ -353,22 +415,22 @@ function DashboardTab({
 
       {supportBtn}
 
-      <div className="sectionHead">Vitals</div>
+      <div className="sectionHead">{t("Vitals")}</div>
       <div className="vGrid">
-        <VitalBar icon="health" label="Health" value={me.health} max={me.maxHealth} color={theme.stat.health} />
-        <VitalBar icon="hunger" label="Hunger" value={me.hunger} max={me.maxHunger} color={theme.stat.food} />
-        <VitalBar icon="thirst" label="Thirst" value={me.thirst} max={me.maxThirst} color={theme.stat.water} />
-        <VitalBar icon="stamina" label="Stamina" value={me.stamina} max={me.maxStamina} color={theme.stat.stamina} />
-        <VitalBar icon="growth" label="Growth" value={me.growth != null ? me.growth * 100 : null} max={100} color={GROWTH_COLOR} />
+        <VitalBar icon="health" label={t("Health")} value={me.health} max={me.maxHealth} color={theme.stat.health} />
+        <VitalBar icon="hunger" label={t("Hunger")} value={me.hunger} max={me.maxHunger} color={theme.stat.food} />
+        <VitalBar icon="thirst" label={t("Thirst")} value={me.thirst} max={me.maxThirst} color={theme.stat.water} />
+        <VitalBar icon="stamina" label={t("Stamina")} value={me.stamina} max={me.maxStamina} color={theme.stat.stamina} />
+        <VitalBar icon="growth" label={t("Growth")} value={me.growth != null ? me.growth * 100 : null} max={100} color={GROWTH_COLOR} />
       </div>
 
       {me.nutrition ? (
         <>
-          <div className="sectionHead">Nutrition</div>
+          <div className="sectionHead">{t("Nutrition")}</div>
           <div className="vGrid nut">
-            <NutBar label="Carb" value={me.nutrition.carb} color="#e0a94b" />
-            <NutBar label="Protein" value={me.nutrition.protein} color="#66c26a" />
-            <NutBar label="Lipid" value={me.nutrition.lipid} color="#d7b35a" />
+            <NutBar label={t("Carb")} value={me.nutrition.carb} color="#e0a94b" />
+            <NutBar label={t("Protein")} value={me.nutrition.protein} color="#66c26a" />
+            <NutBar label={t("Lipid")} value={me.nutrition.lipid} color="#d7b35a" />
           </div>
         </>
       ) : null}
@@ -376,7 +438,7 @@ function DashboardTab({
       {p ? (
         <>
           <div className="sectionHead">
-            Prime Conditions
+            {t("Prime Conditions")}
             <span className="sectionCount">
               {p.done}/{p.required}
             </span>
@@ -387,7 +449,7 @@ function DashboardTab({
             </div>
             {p.elder ? (
               <div className="primeElder">
-                <CheckMark done /> Prime Elder reached
+                <CheckMark done /> {t("Prime Elder reached")}
               </div>
             ) : (
               <ul className="condList">
@@ -403,13 +465,13 @@ function DashboardTab({
         </>
       ) : null}
 
-      <div className="sectionHead">Add-ons</div>
+      <div className="sectionHead">{t("Add-ons")}</div>
       <div className="addons">
         <button className="addon" onClick={() => onGoto("livemap")}>
-          <TabIcon name="livemap" /> Live Map
+          <TabIcon name="livemap" /> {t("Live Map")}
         </button>
         <button className="addon" onClick={() => onGoto("skin")}>
-          <TabIcon name="skin" /> Skin Editor
+          <TabIcon name="skin" /> {t("Skin Editor")}
         </button>
       </div>
     </div>
@@ -449,6 +511,8 @@ export function MainWindow({
   onSettings: () => void;
   onClose: () => void;
 }) {
+  const language = settings?.language ?? "en";
+  const t = (text: string) => tr(language, text);
   const [tab, setTab] = useState<TabKey>("profile");
   const [mapEditAdmin, setMapEditAdmin] = useState(false);
   const [adminModeOn, setAdminModeOn] = useState(false);
@@ -512,10 +576,26 @@ export function MainWindow({
   }, [focusSupportSignal]);
   const [pos, setPos] = useState<Pos>(saved && typeof saved.x === "number" ? saved : { x: 140, y: 70 });
   const off = useRef<Pos | null>(null);
+  const windowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (saved && typeof saved.x === "number") setPos(saved);
   }, [saved?.x, saved?.y]);
+
+  useEffect(() => {
+    const element = windowRef.current;
+    if (!element) return;
+    const keepVisible = () => {
+      const box = element.getBoundingClientRect();
+      setPos((current) => {
+        const next = clampToViewport(current, box.width, box.height);
+        return next.x === current.x && next.y === current.y ? current : next;
+      });
+    };
+    window.addEventListener("resize", keepVisible);
+    keepVisible();
+    return () => window.removeEventListener("resize", keepVisible);
+  }, []);
 
   const onDown = (e: React.MouseEvent) => {
     if (!(e.target as HTMLElement).closest(".dragHandle")) return;
@@ -524,10 +604,12 @@ export function MainWindow({
     lockInteract();
     const move = (ev: MouseEvent) => {
       if (!off.current) return;
-      setPos({
-        x: Math.max(0, Math.min(window.innerWidth - 160, ev.clientX - off.current.x)),
-        y: Math.max(0, Math.min(window.innerHeight - 46, ev.clientY - off.current.y)),
-      });
+      const box = windowRef.current?.getBoundingClientRect();
+      setPos(clampToViewport(
+        { x: ev.clientX - off.current.x, y: ev.clientY - off.current.y },
+        box?.width ?? 0,
+        box?.height ?? 0,
+      ));
     };
     const up = () => {
       window.removeEventListener("mousemove", move);
@@ -552,11 +634,12 @@ export function MainWindow({
   const statusText = me?.hasData
     ? `${me.species ?? "Unknown"}${me.growth != null ? ` · ${Math.round(me.growth * 100)}%` : ""}`
     : authed
-    ? "not in game"
-    : "signed out";
+    ? t("Not in game")
+    : t("Signed out");
 
   return (
     <div
+      ref={windowRef}
       className="mainWin interactive-region"
       style={{ left: pos.x, top: pos.y }}
       onMouseDown={onDown}
@@ -568,9 +651,9 @@ export function MainWindow({
             <path d="M12 2 21 7v10l-9 5-9-5V7l9-5Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
             <path d="M12 7 16 9.5v5L12 17l-4-2.5v-5L12 7Z" fill="currentColor" />
           </svg>
-          <span className="brandName">{settings?.serverName ?? "TheBurntIsle"}</span>
+          <span className="brandName">{settings?.serverName ?? "TheIsleVNHud"}</span>
           <span className="brandSep">/</span>
-          <span className="brandCtx">{TABS.find((t) => t.key === tab)?.label ?? "Dashboard"}</span>
+          <span className="brandCtx">{t(TABS.find((item) => item.key === tab)?.label ?? "Dashboard")}</span>
         </span>
         <span className="topStatus">
           <span className={`liveDot ${me?.hasData ? "on" : ""}`} />
@@ -586,13 +669,13 @@ export function MainWindow({
           </button>
         ) : null}
         <span className="topVer">v{__APP_VERSION__}</span>
-        <button className="iconBtn" onClick={onSettings} title="settings" aria-label="Settings">
+        <button className="iconBtn" onClick={onSettings} title={t("Settings")} aria-label={t("Settings")}>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
           </svg>
         </button>
-        <button className="iconBtn danger" onClick={onClose} title="hide dashboard" aria-label="Hide dashboard">
+        <button className="iconBtn danger" onClick={onClose} title={t("Hide dashboard")} aria-label={t("Hide dashboard")}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
             <path d="M6 6 18 18M18 6 6 18" />
           </svg>
@@ -605,15 +688,15 @@ export function MainWindow({
             <path d="M12 2 21 7v10l-9 5-9-5V7l9-5Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
             <path d="M12 7 16 9.5v5L12 17l-4-2.5v-5L12 7Z" fill="currentColor" opacity="0.9" />
           </svg>
-          <div className="gateTtl">Sign in to {settings?.serverName ?? "TheBurntIsle"}</div>
-          <div className="gateSub">Log in with Steam to load your dino stats, garage, skins and the live map.</div>
+          <div className="gateTtl">{t("Sign in to")} {settings?.serverName ?? "TheIsleVNHud"}</div>
+          <div className="gateSub">{t("Log in with Steam to load your dino stats, garage, skins and the live map.")}</div>
           <button className="steamBtn" onClick={onLogin}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
               <path d="M12 2a10 10 0 0 0-9.9 8.7l5.3 2.2a2.8 2.8 0 0 1 1.6-.5h.1l2.4-3.4v-.1a3.7 3.7 0 1 1 3.7 3.7h-.1l-3.4 2.4v.1a2.8 2.8 0 0 1-5.5.8L2 16.6A10 10 0 1 0 12 2Zm-3.6 15.2-1.2-.5a2.1 2.1 0 0 0 3.9-1 2.1 2.1 0 0 0-2.8-2l1.3.5a1.6 1.6 0 1 1-1.2 3Zm8.8-6.7a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Z" />
             </svg>
-            Sign in with Steam
+            {t("Sign in with Steam")}
           </button>
-          <div className="gateHint">Opens in your browser</div>
+          <div className="gateHint">{t("Opens in your browser")}</div>
         </div>
       ) : (
         <>
@@ -633,7 +716,7 @@ export function MainWindow({
                 onClick={() => setTab(t.key)}
               >
                 <TabIcon name={t.key} />
-                <span>{t.label}</span>
+                <span>{tr(language, t.label)}</span>
                 {t.key === "admin" && ticketUnread > 0 ? (
                   <span className={`tabBadge ${ticketUrgent ? "urgent" : ""}`}>{ticketUnread}</span>
                 ) : null}
@@ -643,7 +726,7 @@ export function MainWindow({
           </div>
           <div className="tabContent">
             {tab === "profile" ? (
-              <DashboardTab me={me} theme={theme} onGoto={setTab} supportOn={adminModeOn} />
+              <DashboardTab me={me} theme={theme} onGoto={setTab} supportOn={adminModeOn} language={language} />
             ) : tab === "livemap" ? (
               <LiveMapTab authed={authed} onLogin={onLogin} />
             ) : tab === "skin" ? (

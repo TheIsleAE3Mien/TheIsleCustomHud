@@ -4,6 +4,9 @@ import { HeartHud, MainWindow, StatsWidget } from "./MainWindow";
 import { RadarPanel } from "./RadarPanel";
 import { TrollLayer } from "./TrollLayer";
 import { ColorSwatch } from "./ColorPicker";
+import { CompassWidget } from "./CompassWidget";
+import { clampToViewport } from "./drag";
+import { tr, translatePrimeQuest, type AppLanguage } from "./i18n";
 import type {
   AuthInfo,
   LiveFrame,
@@ -18,7 +21,7 @@ const DEFAULT_THEME: OverlayTheme = {
   stat: { health: "#ff5a5a", stamina: "#35d6a4", food: "#ffb454", water: "#5ab6ff" },
 };
 
-const BURNT_ISLE_THEME: OverlayTheme = {
+const VN_HUD_THEME: OverlayTheme = {
   accent: "#ff7a3c",
   stat: { health: "#ff5148", stamina: "#ffb638", food: "#8bd44f", water: "#49b6ff" },
 };
@@ -30,7 +33,7 @@ function applyTheme(t: OverlayTheme) {
   r.setProperty("--phos-dim", t.accent + "77");
 }
 
-function BootScreen({ onDone, serverName }: { onDone: () => void; serverName: string }) {
+function BootScreen({ onDone, serverName, overlayLabel }: { onDone: () => void; serverName: string; overlayLabel: string }) {
   const [leaving, setLeaving] = useState(false);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
@@ -44,15 +47,19 @@ function BootScreen({ onDone, serverName }: { onDone: () => void; serverName: st
   }, []);
   return (
     <div className={`boot ${leaving ? "leaving" : ""}`}>
-      <div className="bootMark">
-        <div className="bootLogo">
-          {serverName}
+      <div className="bootMark" role="status" aria-live="polite" aria-label={`${serverName} đang khởi động`}>
+        <img className="bootBackdropLogo" src="./icon.png" alt="" aria-hidden="true" />
+        <div className="bootContent">
+          <div className="bootEyebrow">THE ISLE VIETNAM HUD</div>
+          <div className="bootLogo">
+            {serverName}
+          </div>
+          <div className="bootSub">{overlayLabel ? `${overlayLabel.toUpperCase()} · ` : ""}v{__APP_VERSION__}</div>
+          <div className="bootBar" aria-hidden="true">
+            <div className="bootBarFill" />
+          </div>
+          <div className="bootCredit">Coded by RayJacobs</div>
         </div>
-        <div className="bootSub">OVERLAY · v{__APP_VERSION__}</div>
-        <div className="bootBar">
-          <div className="bootBarFill" />
-        </div>
-        <div className="bootCredit">Coded by YannikAufDie1</div>
       </div>
     </div>
   );
@@ -77,24 +84,95 @@ function useAutoInteract() {
 }
 
 type Pos = { x: number; y: number };
+type WidgetLayout = Pos & { scale?: number };
+type WidgetSize = { width: number; height: number };
+
+const clampScale = (value: number, min = 0.5, max = 2.5) =>
+  Math.max(min, Math.min(max, value));
+
 function DraggablePanel({
   id,
   defaultPos,
   settings,
+  resizeLabel,
   children,
 }: {
   id: string;
   defaultPos: Pos;
   settings: OverlaySettings | null;
+  resizeLabel: string;
   children: React.ReactNode;
 }) {
-  const saved = (settings?.layout as Record<string, Pos> | null | undefined)?.[id];
+  const saved = (settings?.layout as Record<string, WidgetLayout> | null | undefined)?.[id];
   const [pos, setPos] = useState<Pos>(saved && typeof saved.x === "number" ? saved : defaultPos);
+  const [scale, setScale] = useState(
+    typeof saved?.scale === "number" ? clampScale(saved.scale) : 1,
+  );
+  const [baseSize, setBaseSize] = useState<WidgetSize | null>(null);
   const off = useRef<Pos | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const hovered = useRef(false);
+  const scaleRef = useRef(scale);
+
+  const saveLayout = (next: WidgetLayout) => {
+    void window.isleOverlay.getSettings().then((s) => {
+      void window.isleOverlay.setSettings({
+        layout: { ...(s.layout || {}), [id]: next },
+      });
+    });
+  };
+
   useEffect(() => {
     if (saved && typeof saved.x === "number") setPos(saved);
-  }, [saved?.x, saved?.y]);
+    if (typeof saved?.scale === "number") {
+      const nextScale = clampScale(saved.scale);
+      scaleRef.current = nextScale;
+      setScale(nextScale);
+    }
+  }, [saved?.x, saved?.y, saved?.scale]);
+
+  useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const measure = () => {
+      const width = content.offsetWidth;
+      const height = content.offsetHeight;
+      if (width > 0 && height > 0) {
+        setBaseSize((current) =>
+          current?.width === width && current.height === height ? current : { width, height },
+        );
+      }
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const element = panelRef.current;
+    if (!element) return;
+    const keepVisible = () => {
+      const box = element.getBoundingClientRect();
+      setPos((current) => {
+        const next = clampToViewport(current, box.width, box.height);
+        return next.x === current.x && next.y === current.y ? current : next;
+      });
+    };
+    const observer = new ResizeObserver(keepVisible);
+    observer.observe(element);
+    window.addEventListener("resize", keepVisible);
+    keepVisible();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", keepVisible);
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -109,10 +187,13 @@ function DraggablePanel({
       else return;
       e.preventDefault();
       setPos((p) => {
-        const np = { x: p.x + dx, y: p.y + dy };
-        void window.isleOverlay.getSettings().then((s) => {
-          void window.isleOverlay.setSettings({ layout: { ...(s.layout || {}), [id]: np } });
-        });
+        const box = panelRef.current?.getBoundingClientRect();
+        const np = clampToViewport(
+          { x: p.x + dx, y: p.y + dy },
+          box?.width ?? 0,
+          box?.height ?? 0,
+        );
+        saveLayout({ ...np, scale: scaleRef.current });
         return np;
       });
     };
@@ -127,10 +208,12 @@ function DraggablePanel({
     lockInteract();
     const move = (ev: MouseEvent) => {
       if (!off.current) return;
-      setPos({
-        x: Math.max(0, Math.min(window.innerWidth - 60, ev.clientX - off.current.x)),
-        y: Math.max(0, Math.min(window.innerHeight - 34, ev.clientY - off.current.y)),
-      });
+      const box = panelRef.current?.getBoundingClientRect();
+      setPos(clampToViewport(
+        { x: ev.clientX - off.current.x, y: ev.clientY - off.current.y },
+        box?.width ?? 0,
+        box?.height ?? 0,
+      ));
     };
     const up = () => {
       window.removeEventListener("mousemove", move);
@@ -138,10 +221,7 @@ function DraggablePanel({
       off.current = null;
       unlockInteract();
       setPos((p) => {
-        void window.isleOverlay.getSettings().then((s) => {
-          const layout = { ...(s.layout || {}), [id]: p };
-          void window.isleOverlay.setSettings({ layout });
-        });
+        saveLayout({ ...p, scale: scaleRef.current });
         return p;
       });
     };
@@ -149,22 +229,74 @@ function DraggablePanel({
     window.addEventListener("mouseup", up);
   };
 
+  const onResizeDown = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!baseSize) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const start = { x: e.clientX, y: e.clientY, scale: scaleRef.current };
+    lockInteract();
+    const move = (ev: MouseEvent) => {
+      const denominator = baseSize.width ** 2 + baseSize.height ** 2;
+      const projected = denominator > 0
+        ? ((ev.clientX - start.x) * baseSize.width + (ev.clientY - start.y) * baseSize.height) / denominator
+        : 0;
+      const viewportMax = Math.min(
+        (window.innerWidth - pos.x) / baseSize.width,
+        (window.innerHeight - pos.y) / baseSize.height,
+        2.5,
+      );
+      const nextScale = Math.max(0.35, Math.min(clampScale(start.scale + projected), viewportMax));
+      scaleRef.current = nextScale;
+      setScale(nextScale);
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      unlockInteract();
+      saveLayout({ ...pos, scale: scaleRef.current });
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  const scaledWidth = baseSize ? baseSize.width * scale : undefined;
+  const scaledHeight = baseSize ? baseSize.height * scale : undefined;
+
   return (
     <div
-      className="panel interactive-region"
-      style={{ left: pos.x, top: pos.y }}
+      ref={panelRef}
+      className="panel resizablePanel hudWidgetPanel interactive-region"
+      style={{ left: pos.x, top: pos.y, width: scaledWidth, height: scaledHeight }}
       onMouseDown={onDown}
       onMouseEnter={() => (hovered.current = true)}
       onMouseLeave={() => (hovered.current = false)}
     >
-      {children}
+      <div
+        ref={contentRef}
+        className="resizablePanelContent"
+        style={{ transform: `scale(${scale})` }}
+      >
+        {children}
+      </div>
+      <button
+        type="button"
+        className="panelResizeHandle"
+        aria-label={resizeLabel}
+        title={resizeLabel}
+        onMouseDown={onResizeDown}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M6 14 14 6M10 14l4-4M2 14 14 2" />
+        </svg>
+      </button>
     </div>
   );
 }
 
 
-function PrimePanel({ me }: { me: PlayerMe | null }) {
+function PrimePanel({ me, language }: { me: PlayerMe | null; language: AppLanguage }) {
   const p = me?.prime;
+  const t = (text: string) => tr(language, text);
   return (
     <div className="frame primeFrame">
       <div className="frameBar dragHandle">
@@ -175,18 +307,22 @@ function PrimePanel({ me }: { me: PlayerMe | null }) {
       </div>
       <div className="frameBody">
         {!p ? (
-          <div className="muted">no prime data</div>
+          <div className="muted">{t("No Prime data")}</div>
         ) : p.elder ? (
-          <div className="ok">✔ Prime Elder</div>
+          <div className="ok">✔ {t("Prime Elder reached")}</div>
         ) : (
           <>
             <div className={p.eligible ? "ok" : "muted"}>
-              {p.eligible ? "✔ eligible for elder" : `need ${p.required} conditions`}
+              {p.eligible
+                ? `✔ ${t("Eligible for Prime Elder")}`
+                : language === "vi"
+                  ? `Cần ${p.required} điều kiện`
+                  : `Need ${p.required} conditions`}
             </div>
             <ul className="primeList">
               {p.quests.map((q, i) => (
                 <li key={i} className={q.done ? "q-done" : "q-open"}>
-                  <span className="qbox">{q.done ? "▣" : "▢"}</span> {q.name}
+                  <span className="qbox">{q.done ? "▣" : "▢"}</span> {translatePrimeQuest(language, q.name)}
                 </li>
               ))}
             </ul>
@@ -198,10 +334,11 @@ function PrimePanel({ me }: { me: PlayerMe | null }) {
 }
 
 const PANELS: { key: string; label: string; soon?: boolean }[] = [
-  { key: "stats", label: "STATS" },
+  { key: "compass", label: "Compass" },
+  { key: "stats", label: "Stats" },
   { key: "prime", label: "PRIME" },
-  { key: "heart", label: "HP HEART" },
-  { key: "radar", label: "RADAR" },
+  { key: "heart", label: "HP Heart" },
+  { key: "radar", label: "Radar" },
 ];
 
 function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
@@ -278,15 +415,17 @@ function SettingsPanel({
   const [cat, setCat] = useState("widgets");
   const [streamerMode, setStreamerMode] = useState(settings?.streamerMode ?? false);
   const [compatMode, setCompatMode] = useState(settings?.compatMode ?? false);
-  const [serverName, setServerName] = useState(settings?.serverName ?? "TheBurntIsle");
-  async function commitServerName() {
-    const merged = await window.isleOverlay.setSettings({ serverName });
-    setServerName(merged.serverName);
-  }
+  const [language, setLanguage] = useState<AppLanguage>(settings?.language ?? "en");
+  const [statsStyle, setStatsStyle] = useState<"bars" | "circles">(settings?.statsStyle ?? "bars");
+  const [hudTransparent, setHudTransparent] = useState(settings?.hudTransparent ?? false);
+  const t = (text: string) => tr(language, text);
   useEffect(() => {
     void window.isleOverlay.getSettings().then((s) => {
       setStreamerMode(Boolean(s.streamerMode));
       setCompatMode(Boolean(s.compatMode));
+      setLanguage(s.language);
+      setStatsStyle(s.statsStyle);
+      setHudTransparent(Boolean(s.hudTransparent));
     });
   }, []);
 
@@ -295,7 +434,7 @@ function SettingsPanel({
       <div className="frame settingsFrame">
         <div className="frameBar">
           <span className="dot" />
-          <span className="ttl">SETTINGS</span>
+          <span className="ttl">{t("Settings").toUpperCase()}</span>
           <button className="xbtn" onClick={onClose}>✕</button>
         </div>
         <div className="settingsLayout">
@@ -306,14 +445,14 @@ function SettingsPanel({
                 className={`settingsRailBtn ${cat === c.key ? "on" : ""}`}
                 onClick={() => setCat(c.key)}
               >
-                {c.label}
+                {t(c.label)}
               </button>
             ))}
           </div>
           <div className="settingsContent">
           {cat === "widgets" && (<>
-          <div className="secLabel">detached widgets</div>
-          <div className="hint">tear a widget out onto your screen, then drag it anywhere</div>
+          <div className="secLabel">{t("Detached widgets")}</div>
+          <div className="hint">{t("Enable widgets, drag them anywhere, and resize them from the bottom-right corner.")}</div>
           <div className="featRow">
             {PANELS.map((p) => (
               <button
@@ -321,25 +460,25 @@ function SettingsPanel({
                 className={`chip ${panels[p.key] ? "on" : ""}`}
                 onClick={() => onTogglePanel(p.key)}
               >
-                {p.label}
+                {t(p.label).toUpperCase()}
               </button>
             ))}
           </div>
 
           </>)}
           {cat === "radar" && (<>
-          <div className="secLabel">live radar</div>
-          <div className="hint">a floating minimap that follows you in-game. drag the minimap to move it</div>
+          <div className="secLabel">{t("Live radar")}</div>
+          <div className="hint">{t("A floating minimap that follows you in-game. Drag it to move it.")}</div>
           <button className={`radarToggle ${radarOpen ? "on" : ""}`} onClick={toggleRadar}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <circle cx="12" cy="12" r="9" />
               <path d="M12 3v18M3 12h18" strokeWidth="1" opacity="0.5" />
               <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" />
             </svg>
-            {radarOpen ? "Close radar" : "Open radar"}
+            {t(radarOpen ? "Close radar" : "Open radar")}
           </button>
 
-          <div className="hint" style={{ marginTop: 6 }}>size · {radarSize}px</div>
+          <div className="hint" style={{ marginTop: 6 }}>{t("Size")} · {radarSize}px</div>
           <input
             className="range"
             type="range"
@@ -354,7 +493,7 @@ function SettingsPanel({
             }}
           />
 
-          <div className="hint" style={{ marginTop: 6 }}>range</div>
+          <div className="hint" style={{ marginTop: 6 }}>{t("Range")}</div>
           <div className="featRow">
             {RANGE_LABELS.map((lbl, i) => (
               <button
@@ -370,7 +509,42 @@ function SettingsPanel({
             ))}
           </div>
 
-          <div className="hint" style={{ marginTop: 6 }}>shape</div>
+          <div className="secLabel">{t("Stats layout")}</div>
+          <div className="featRow">
+            {(["bars", "circles"] as const).map((style) => (
+              <button
+                key={style}
+                className={`chip ${statsStyle === style ? "on" : ""}`}
+                aria-pressed={statsStyle === style}
+                onClick={() => {
+                  setStatsStyle(style);
+                  void window.isleOverlay.setSettings({ statsStyle: style });
+                }}
+              >
+                {t(style === "bars" ? "Bars" : "Circles").toUpperCase()}
+              </button>
+            ))}
+          </div>
+
+          <div className="secLabel">{t("HUD background")}</div>
+          <div className="hint">{t("Choose a solid panel or remove the background behind floating HUD widgets.")}</div>
+          <div className="featRow">
+            {([false, true] as const).map((transparent) => (
+              <button
+                key={String(transparent)}
+                className={`chip ${hudTransparent === transparent ? "on" : ""}`}
+                aria-pressed={hudTransparent === transparent}
+                onClick={() => {
+                  setHudTransparent(transparent);
+                  void window.isleOverlay.setSettings({ hudTransparent: transparent });
+                }}
+              >
+                {t(transparent ? "Transparent" : "Default").toUpperCase()}
+              </button>
+            ))}
+          </div>
+
+          <div className="hint" style={{ marginTop: 6 }}>{t("Shape")}</div>
           <div className="featRow">
             {(["circle", "square"] as const).map((shape) => (
               <button
@@ -382,7 +556,7 @@ function SettingsPanel({
                   void window.isleOverlay.setSettings({ radarShape: shape });
                 }}
               >
-                {shape.toUpperCase()}
+                {t(shape === "circle" ? "Circle" : "Square").toUpperCase()}
               </button>
             ))}
           </div>
@@ -396,14 +570,15 @@ function SettingsPanel({
                 void window.isleOverlay.setSettings({ radarLabels: v });
               }}
             >
-              LABELS
+              {t("Labels").toUpperCase()}
             </button>
           </div>
+          <div className="hint" style={{ marginTop: 6 }}>{t("Shows names for places and markers on the minimap.")}</div>
 
           </>)}
           {cat === "controls" && (<>
-          <div className="secLabel">cursor</div>
-          <div className="hint">press the key to show a mouse cursor and click the overlay</div>
+          <div className="secLabel">{t("Cursor")}</div>
+          <div className="hint">{t("Press the key to show a mouse cursor and click the overlay.")}</div>
           <div className="featRow">
             <button
               className={`chip ${cursorEnabled ? "on" : ""}`}
@@ -422,7 +597,7 @@ function SettingsPanel({
                 void window.isleOverlay.setSettings({ cursorMode: "toggle" });
               }}
             >
-              TOGGLE
+              {t("Toggle").toUpperCase()}
             </button>
             <button
               className={`chip ${cursorMode === "hold" ? "on" : ""}`}
@@ -431,10 +606,10 @@ function SettingsPanel({
                 void window.isleOverlay.setSettings({ cursorMode: "hold" });
               }}
             >
-              HOLD
+              {t("Hold").toUpperCase()}
             </button>
           </div>
-          <div className="hint" style={{ marginTop: 6 }}>key · {cursorKey}</div>
+          <div className="hint" style={{ marginTop: 6 }}>{t("Key")} · {cursorKey}</div>
           <div className="featRow" style={{ flexWrap: "wrap" }}>
             {CURSOR_KEYS.map((k) => (
               <button
@@ -449,13 +624,13 @@ function SettingsPanel({
               </button>
             ))}
             <button className={`chip ${recording ? "on" : ""}`} onClick={recordCursorKey}>
-              {recording ? "PRESS KEY…" : "+ CUSTOM"}
+              {recording ? t("Press key…").toUpperCase() : `+ ${t("Custom").toUpperCase()}`}
             </button>
           </div>
 
-          <div className="secLabel">dashboard hotkey</div>
-          <div className="hint">global shortcut: show/hide the dashboard and cursor even while the game has focus</div>
-          <div className="hint" style={{ marginTop: 6 }}>key · {dashKey}</div>
+          <div className="secLabel">{t("Dashboard hotkey")}</div>
+          <div className="hint">{t("Global shortcut: show or hide the dashboard while the game has focus.")}</div>
+          <div className="hint" style={{ marginTop: 6 }}>{t("Key")} · {dashKey}</div>
           <div className="featRow" style={{ flexWrap: "wrap" }}>
             {CURSOR_KEYS.map((k) => (
               <button
@@ -470,17 +645,14 @@ function SettingsPanel({
               </button>
             ))}
             <button className={`chip ${recordingDash ? "on" : ""}`} onClick={recordDashKey}>
-              {recordingDash ? "PRESS KEY…" : "+ CUSTOM"}
+              {recordingDash ? t("Press key…").toUpperCase() : `+ ${t("Custom").toUpperCase()}`}
             </button>
           </div>
 
           </>)}
           {cat === "streaming" && (<>
-          <div className="secLabel">OBS / streamer mode</div>
-          <div className="hint">
-            Makes this overlay a normal, capturable window so it shows up in OBS. Add a
-            "Window Capture" source and pick "{serverName} Overlay".
-          </div>
+          <div className="secLabel">{t("OBS / streamer mode")}</div>
+          <div className="hint">{t("Makes the overlay a normal capturable window for OBS Window Capture.")}</div>
           <div className="featRow">
             <button
               className={`chip ${streamerMode ? "on" : ""}`}
@@ -494,43 +666,42 @@ function SettingsPanel({
             </button>
           </div>
           <div className="hint" style={{ marginTop: 6 }}>
-            Use the "Windows 10 (1903+)" capture method. If the background isn't transparent,
-            add a Chroma/Color key or lower the source opacity.
+            {t("Use Windows 10 (1903+) capture. If transparency fails, add a Chroma/Color Key or lower source opacity.")}
           </div>
 
           </>)}
           {cat === "appearance" && (<>
-          <div className="secLabel">server name</div>
-          <label className="settingsField" htmlFor="server-name">
-            <span className="hint">Displayed in the overlay title and branding</span>
-            <input
-              id="server-name"
-              className="settingsTextInput"
-              value={serverName}
-              maxLength={48}
-              spellCheck={false}
-              onChange={(e) => setServerName(e.target.value)}
-              onBlur={() => void commitServerName()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") e.currentTarget.blur();
-              }}
-            />
-          </label>
-
-          <div className="secLabel">theme</div>
-          <div className="presetRow">
-            <button className="tbtn ghost" onClick={() => onTheme(DEFAULT_THEME)}>Default</button>
-            <button className="tbtn ghost" onClick={() => onTheme(BURNT_ISLE_THEME)}>TheBurntIsle</button>
+          <div className="secLabel">{t("Language")}</div>
+          <div className="featRow">
+            {(["en", "vi"] as const).map((nextLanguage) => (
+              <button
+                key={nextLanguage}
+                className={`chip ${language === nextLanguage ? "on" : ""}`}
+                aria-pressed={language === nextLanguage}
+                onClick={() => {
+                  setLanguage(nextLanguage);
+                  void window.isleOverlay.setSettings({ language: nextLanguage, languageExplicit: true });
+                }}
+              >
+                {tr(nextLanguage, nextLanguage === "en" ? "English" : "Vietnamese").toUpperCase()}
+              </button>
+            ))}
           </div>
-          <ColorRow label="accent" value={theme.accent} onChange={(v) => onTheme({ ...theme, accent: v })} />
 
-          <div className="secLabel">stat colors</div>
-          <ColorRow label="health" value={theme.stat.health} onChange={(v) => setStat("health", v)} />
-          <ColorRow label="stamina" value={theme.stat.stamina} onChange={(v) => setStat("stamina", v)} />
-          <ColorRow label="food" value={theme.stat.food} onChange={(v) => setStat("food", v)} />
-          <ColorRow label="water" value={theme.stat.water} onChange={(v) => setStat("water", v)} />
+          <div className="secLabel">{t("Theme")}</div>
+          <div className="presetRow">
+            <button className="tbtn ghost" onClick={() => onTheme(DEFAULT_THEME)}>{t("Default")}</button>
+            <button className="tbtn ghost" onClick={() => onTheme(VN_HUD_THEME)}>TheIsleVNHud</button>
+          </div>
+          <ColorRow label={t("Accent")} value={theme.accent} onChange={(v) => onTheme({ ...theme, accent: v })} />
 
-          <div className="secLabel">opacity</div>
+          <div className="secLabel">{t("Stat colors")}</div>
+          <ColorRow label={t("Health")} value={theme.stat.health} onChange={(v) => setStat("health", v)} />
+          <ColorRow label={t("Stamina")} value={theme.stat.stamina} onChange={(v) => setStat("stamina", v)} />
+          <ColorRow label={t("Hunger")} value={theme.stat.food} onChange={(v) => setStat("food", v)} />
+          <ColorRow label={t("Thirst")} value={theme.stat.water} onChange={(v) => setStat("water", v)} />
+
+          <div className="secLabel">{t("Opacity")}</div>
           <input
             className="range"
             type="range"
@@ -541,13 +712,8 @@ function SettingsPanel({
             onChange={(e) => onOpacity(Number(e.target.value))}
           />
 
-          <div className="secLabel">compatibility mode</div>
-          <div className="hint">
-            Turn this on if the overlay covers your screen in black and you can only see
-            the game by dragging the opacity slider down. It switches Windows to a different
-            way of compositing the overlay window, which restores transparency on graphics
-            drivers that break it.
-          </div>
+          <div className="secLabel">{t("Compatibility mode")}</div>
+          <div className="hint">{t("Use this only when the overlay creates a black background because it has a small performance cost.")}</div>
           <div className="featRow">
             <button
               className={`chip ${compatMode ? "on" : ""}`}
@@ -561,26 +727,25 @@ function SettingsPanel({
             </button>
           </div>
           <div className="hint" style={{ marginTop: 6 }}>
-            Restart the overlay for this to take effect. Leave it off unless you need it,
-            it costs some performance.
+            {t("Restart the overlay for compatibility mode changes to take effect.")}
           </div>
 
           </>)}
           {cat === "account" && (<>
-          <div className="secLabel">account</div>
+          <div className="secLabel">{t("Account")}</div>
           <div className="menuFoot">
             {authed ? (
               <button className="tbtn ghost" onClick={onLogout}>
-                logout
+                {t("Logout")}
               </button>
             ) : null}
             <button className="tbtn ghost" onClick={onQuit}>
-              quit overlay
+              {t("Quit overlay")}
             </button>
           </div>
-          <div className="secLabel">about</div>
-          <div className="hint">{serverName} Overlay · v{__APP_VERSION__}</div>
-          <div className="hint">Coded by YannikAufDie1</div>
+          <div className="secLabel">{t("About")}</div>
+          <div className="hint">{[settings?.serverName ?? "TheIsleVNHud", settings?.overlayLabel].filter(Boolean).join(" ")} · v{__APP_VERSION__}</div>
+          <div className="hint">Coded by RayJacobs</div>
           </>)}
           </div>
         </div>
@@ -655,7 +820,7 @@ export function App() {
   const [auth, setAuth] = useState<AuthInfo>({ steamId: null, authed: false });
   const [state, setState] = useState<OverlayState>({ gameDetected: false, active: false });
   const [settings, setSettings] = useState<OverlaySettings | null>(null);
-  const [panels, setPanels] = useState<Record<string, boolean>>({ heart: true });
+  const [panels, setPanels] = useState<Record<string, boolean>>({ heart: true, compass: true });
   const [theme, setThemeState] = useState<OverlayTheme>(DEFAULT_THEME);
   const [opacity, setOpacityState] = useState(1);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -664,6 +829,12 @@ export function App() {
   const [focusSupportSignal, setFocusSupportSignal] = useState(0);
   const [blocked, setBlocked] = useState(false);
   const mounted = useRef(false);
+  const language = settings?.language ?? "en";
+  const t = (text: string) => tr(language, text);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
 
   useEffect(() => {
     const off = window.isleOverlay.onDash((on) => setMainOpen(on));
@@ -771,7 +942,11 @@ export function App() {
 
   if (!booted) {
     return (
-      <BootScreen serverName={settings?.serverName ?? "TheBurntIsle"} onDone={() => setBooted(true)} />
+      <BootScreen
+        serverName={settings?.serverName ?? "TheIsleVNHud"}
+        overlayLabel={settings?.overlayLabel ?? ""}
+        onDone={() => setBooted(true)}
+      />
     );
   }
 
@@ -795,10 +970,9 @@ export function App() {
     return (
       <div className="overlay">
         <div className="streamerBox">
-          <div className="streamerBoxTitle">Streamer setup</div>
+          <div className="streamerBoxTitle">{t("Streaming")}</div>
           <div className="streamerBoxHint">
-            {settings?.serverName ?? "TheBurntIsle"} Overlay is capturable. Add a Window Capture in OBS and pick this
-            window, then tab back into the game.
+            {[settings?.serverName ?? "TheIsleVNHud", settings?.overlayLabel].filter(Boolean).join(" ")} · {t("Makes the overlay a normal capturable window for OBS Window Capture.")}
           </div>
         </div>
       </div>
@@ -806,7 +980,7 @@ export function App() {
   }
 
   return (
-    <div className="overlay">
+    <div className={`overlay ${settings?.hudTransparent ? "hudTransparent" : ""} ${mainOpen ? "dashboardOpen" : ""}`}>
       <TrollLayer />
       <div style={{ display: mainOpen ? "contents" : "none" }}>
         <MainWindow
@@ -852,22 +1026,50 @@ export function App() {
         />
       ) : null}
 
+      {auth.authed && panels.compass && isDino ? (
+        <DraggablePanel
+          id="w_compass"
+          defaultPos={{ x: Math.max(0, window.innerWidth / 2 - 360), y: 18 }}
+          settings={settings}
+          resizeLabel={t("Resize HUD")}
+        >
+          <CompassWidget live={live} language={language} />
+        </DraggablePanel>
+      ) : null}
+
       {auth.authed && panels.stats && isDino ? (
-        <DraggablePanel id="w_stats" defaultPos={{ x: 18, y: 240 }} settings={settings}>
-          <StatsWidget me={view} theme={theme} />
+        <DraggablePanel id="w_stats" defaultPos={{ x: 18, y: 240 }} settings={settings} resizeLabel={t("Resize HUD")}>
+          <StatsWidget
+            me={view}
+            theme={theme}
+            styleMode={settings?.statsStyle ?? "bars"}
+            language={language}
+          />
         </DraggablePanel>
       ) : null}
 
       {auth.authed && panels.prime && isDino ? (
-        <DraggablePanel id="w_prime" defaultPos={{ x: 18, y: 470 }} settings={settings}>
-          <PrimePanel me={view} />
+        <DraggablePanel id="w_prime" defaultPos={{ x: 18, y: 470 }} settings={settings} resizeLabel={t("Resize HUD")}>
+          <PrimePanel me={view} language={language} />
         </DraggablePanel>
       ) : null}
 
-      {auth.authed && panels.heart && isDino ? <HeartHud me={view} /> : null}
+      {auth.authed && panels.heart && isDino ? (
+        <DraggablePanel
+          id="w_heart"
+          defaultPos={{
+            x: Math.max(0, window.innerWidth - window.innerHeight * 0.2),
+            y: Math.max(0, window.innerHeight - window.innerHeight * 0.3),
+          }}
+          settings={settings}
+          resizeLabel={t("Resize HUD")}
+        >
+          <HeartHud me={view} />
+        </DraggablePanel>
+      ) : null}
 
       {auth.authed && panels.radar ? (
-        <DraggablePanel id="w_radar" defaultPos={{ x: 18, y: 60 }} settings={settings}>
+        <DraggablePanel id="w_radar" defaultPos={{ x: 18, y: 60 }} settings={settings} resizeLabel={t("Resize HUD")}>
           <RadarPanel
             live={live}
             base={(settings?.apiBaseUrl ?? "https://islepilot.eu").replace(/\/+$/, "")}
@@ -882,10 +1084,13 @@ export function App() {
       <button
         className="statusPill interactive-region"
         onClick={() => setMainOpen((v) => !v)}
-        title={mainOpen ? "hide dashboard" : "show dashboard"}
+        title={t(mainOpen ? "Hide dashboard" : "Show dashboard")}
+        aria-pressed={mainOpen}
       >
         <span className={`sig ${state.gameDetected ? "on" : "off"}`} />
-        {mainOpen ? (settings?.serverName ?? "TheBurntIsle") : "Dashboard"}
+        <span className="statusText">
+          {t("{key} to open dashboard").replace("{key}", settings?.dashKey ?? "F8")}
+        </span>
       </button>
     </div>
   );

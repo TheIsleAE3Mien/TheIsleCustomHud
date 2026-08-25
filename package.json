@@ -1,7 +1,7 @@
 {
-  "name": "the-isle-custom-hud",
+  "name": "the-isle-vn-hud",
   "private": true,
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Customizable Windows in-game HUD for The Isle",
   "author": "TheIsleAE3Mien",
   "contributors": [
@@ -15,7 +15,6 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
-    "test": "node --test test/*.test.cjs",
     "build": "tsc --noEmit --pretty false && vite build",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && npx electron-builder",
@@ -48,12 +47,13 @@
     "wait-on": "^8.0.2"
   },
   "build": {
-    "appId": "com.theisleae3mien.customhud",
-    "productName": "TheIsleCustomHud",
+    "appId": "vn.theisle.hud",
+    "productName": "TheIsleVNHud",
     "protocols": [
       {
-        "name": "IsleOverlay",
+        "name": "TheIsleVNHud",
         "schemes": [
+          "theislevnhud",
           "isle-overlay"
         ]
       }
@@ -64,6 +64,7 @@
     "files": [
       "dist/**",
       "electron/**",
+      "build.config.json",
       "package.json"
     ],
     "extraResources": [
@@ -94,7 +95,7 @@
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "artifactName": "TheIsleCustomHud-${version}-Setup.exe"
+      "artifactName": "TheIsleVNHud-${version}-Setup.exe"
     },
     "copyright": "Copyright © 2026 TheIsleAE3Mien; based on isle-overlay by YannikAufDie1",
     "publish": [

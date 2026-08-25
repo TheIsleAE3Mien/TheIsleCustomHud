@@ -2,6 +2,8 @@ node_modules/
 dist/
 release/
 release-next/
+release-vn*/
+release-*/
 *.exe
 *.exe.blockmap
 *.log

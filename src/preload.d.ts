@@ -5,7 +5,12 @@ export type OverlayTheme = {
 
 export type OverlaySettings = {
   serverName: string;
+  overlayLabel: string;
   apiBaseUrl: string;
+  language: "en" | "vi";
+  languageExplicit: boolean;
+  statsStyle: "bars" | "circles";
+  hudTransparent: boolean;
   steamId: string | null;
   overlayToken: string | null;
   opacity: number;

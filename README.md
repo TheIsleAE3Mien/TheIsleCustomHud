@@ -1,7 +1,11 @@
-# TheIsleCustomHud
+# TheIsleVNHud
 
 Customizable Windows in-game HUD for **The Isle**, based on
 [reversum/isle-overlay](https://github.com/reversum/isle-overlay).
+
+Vietnamese-first HUD with a persistent in-game overlay, movable widgets,
+minimap, live player data, and a smooth location/friend compass. Press `F8` to
+open or close the dashboard; the HUD remains visible while you play.
 
 > [!IMPORTANT]
 > This repository preserves the upstream Git history and credits the original
@@ -10,24 +14,45 @@ Customizable Windows in-game HUD for **The Isle**, based on
 > See [License and attribution](#license-and-attribution) and
 > [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+## HUD preview
+
+### Movable Prime and circular stat widgets
+
+![TheIsleVNHud Prime and circular stat widgets](docs/images/hud-prime-and-stats.png)
+
+### Circular health, hunger, thirst, stamina, and growth indicators
+
+![TheIsleVNHud circular stat HUD](docs/images/hud-circular-stats.png)
+
+### Smooth compass with nearby locations and distance
+
+![TheIsleVNHud location compass](docs/images/hud-compass.png)
+
 ## Features
 
 ### In-game overlay
 
 - Transparent, click-through Electron overlay that follows the The Isle game
-  window and hides when the game is not active.
+  window, stays above fullscreen/borderless gameplay, and hides when the game is
+  not active.
 - Steam sign-in through a deep link; the bearer token stays in the Electron main
   process instead of being exposed to the React renderer.
-- System tray controls, reliable global dashboard hotkey (F8 by default), configurable cursor hotkey, and
-  toggle/hold interaction modes.
-- Draggable detached widgets for stats, Prime progress, heart/health, and radar.
-- Configurable server branding, custom accent and stat colors, opacity, streamer
-  mode, and compatibility mode.
+- `F8` opens or closes only the dashboard; enabled HUD widgets remain visible in
+  game.
+- Draggable and freely resizable widgets for stats, Prime progress,
+  heart/health, compass, and radar. Resize handles are shown only while the
+  dashboard is open.
+- Vietnamese is the default language, with an English/Vietnamese language
+  selector for players.
+- Developer-controlled server branding and backend endpoint, plus player HUD
+  opacity, transparent background, accent/stat colors, streamer mode, and
+  compatibility mode.
 
 ### Player dashboard and HUD
 
 - Dinosaur identity, species, sex, server, online state, and growth.
-- Health, stamina, hunger, thirst, and growth bars.
+- Health, stamina, hunger, thirst, and growth indicators with bar or circular
+  layouts.
 - Carb, protein, and lipid nutrition tracking.
 - Prime/Prime Elder eligibility, completed conditions, and quest checklist.
 - Live updates over WebSocket.
@@ -37,6 +62,11 @@ Customizable Windows in-game HUD for **The Isle**, based on
 - Floating radar/minimap with circle or square shape plus configurable size,
   range, and labels.
 - Live player position and facing direction.
+- Smooth horizontal compass centered at the top of the screen. It shows nearby
+  named map locations within 1,500 metres, avoids overlapping labels, caches map
+  positions, and interpolates rotation to reduce stutter.
+- Friends are always represented on the compass with their name and distance;
+  off-screen friends are pinned to the nearest compass edge.
 - Full live map with named locations, category filters, and food spawn markers.
 
 ### Skin tools
@@ -71,7 +101,7 @@ Customizable Windows in-game HUD for **The Isle**, based on
 - Windows x64 NSIS installer.
 - In-app update checks backed by this repository's GitHub Releases.
 - GitHub Actions validation on pushes and pull requests.
-- Automatic GitHub Release assets for version tags such as `v0.3.2`.
+- Automatic GitHub Release assets for version tags such as `v0.4.0`.
 
 ## Backend requirement
 
@@ -101,13 +131,38 @@ npm run dev
 npm run typecheck
 ```
 
+### Build defaults
+
+Edit `build.config.json` before packaging to customize the defaults used by a
+fresh installation:
+
+- `serverName` and `overlayLabel` control the window title and bottom-right badge.
+- `apiBaseUrl` selects the compatible backend.
+- `language` accepts `en` or `vi`.
+- `statsStyle` accepts `bars` or `circles`.
+- `dashKey`, `radarShape`, and `accentColor` set their initial values.
+- `defaultUserSettings` contains the sanitized default widget layout, scale,
+  visibility, minimap, transparency, and visual settings used by a fresh
+  installation.
+
+The committed default layout is copied from the maintainer's current HUD
+configuration. Authentication fields (`steamId` and `overlayToken`) and the
+machine-specific detached radar window position are deliberately never stored
+in source control.
+
+Server branding and backend values are developer-only build settings and are not
+shown in the installed app. Users can override language, HUD style, hotkeys,
+radar, and colors from the in-app Settings panel. The build language is used
+until the user explicitly selects English or Vietnamese; that choice is then
+remembered.
+
 Build the Windows installer locally:
 
 ```powershell
 npm run dist -- --publish never
 ```
 
-The installer is written to `release/TheIsleCustomHud-<version>-Setup.exe`.
+The installer is written to `release/TheIsleVNHud-<version>-Setup.exe`.
 
 ## GitHub Actions releases
 

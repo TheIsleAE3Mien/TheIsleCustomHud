@@ -5,11 +5,21 @@ const fs = require("fs");
 const {
   DEFAULT_SERVER_NAME,
   dashAccelerator,
+  isGameWindowCandidate,
+  normalizeOverlayLabel,
   normalizeRadarShape,
   normalizeServerName,
 } = require("./overlay-config.cjs");
 
-app.setPath("userData", path.join(app.getPath("appData"), "isle-overlay"));
+const appDataPath = app.getPath("appData");
+const legacyUserDataPath = path.join(appDataPath, "isle-overlay");
+const renamedUserDataPath = path.join(appDataPath, "TheIsleVNHud");
+const legacySettingsFile = path.join(legacyUserDataPath, "isle-overlay.settings.json");
+const renamedSettingsFile = path.join(renamedUserDataPath, "TheIsleVNHud.settings.json");
+
+// safeStorage keys are tied to Electron's userData directory on Windows.
+// Keep the legacy directory so existing encrypted login tokens remain readable.
+app.setPath("userData", legacyUserDataPath);
 
 let uio = null;
 try {
@@ -26,37 +36,106 @@ let uioStarted = false;
 let recordResolve = null;
 
 const SETTINGS_FILE = () =>
-  path.join(app.getPath("userData"), "isle-overlay.settings.json");
+  path.join(app.getPath("userData"), "TheIsleVNHud.settings.json");
+
+const buildConfig = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "build.config.json"), "utf8"));
+  } catch {
+    return {};
+  }
+})();
+
+const buildString = (key, fallback) =>
+  typeof buildConfig[key] === "string" && buildConfig[key].trim()
+    ? buildConfig[key].trim()
+    : fallback;
+
+const configuredUserDefaults =
+  buildConfig.defaultUserSettings && typeof buildConfig.defaultUserSettings === "object"
+    ? buildConfig.defaultUserSettings
+    : {};
+const isHex = (v) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
+const configuredTheme =
+  configuredUserDefaults.theme && typeof configuredUserDefaults.theme === "object"
+    ? configuredUserDefaults.theme
+    : {};
+const configuredStatTheme =
+  configuredTheme.stat && typeof configuredTheme.stat === "object"
+    ? configuredTheme.stat
+    : {};
 
 const defaultTheme = {
-  accent: "#7cf2a6",
-  stat: { health: "#ff5a5a", stamina: "#ffcf4a", food: "#79f2a6", water: "#5ab6ff" },
+  accent: isHex(configuredTheme.accent)
+    ? configuredTheme.accent
+    : isHex(buildString("accentColor", "#7cf2a6"))
+      ? buildString("accentColor", "#7cf2a6")
+      : "#7cf2a6",
+  stat: {
+    health: isHex(configuredStatTheme.health) ? configuredStatTheme.health : "#ff5a5a",
+    stamina: isHex(configuredStatTheme.stamina) ? configuredStatTheme.stamina : "#ffcf4a",
+    food: isHex(configuredStatTheme.food) ? configuredStatTheme.food : "#79f2a6",
+    water: isHex(configuredStatTheme.water) ? configuredStatTheme.water : "#5ab6ff",
+  },
 };
 
 const defaultSettings = {
-  serverName: DEFAULT_SERVER_NAME,
-  apiBaseUrl: "https://islepilot.eu",
+  serverName: normalizeServerName(buildString("serverName", DEFAULT_SERVER_NAME)),
+  overlayLabel: normalizeOverlayLabel(
+    typeof buildConfig.overlayLabel === "string" ? buildConfig.overlayLabel : "",
+  ),
+  apiBaseUrl: buildString("apiBaseUrl", "https://islepilot.eu"),
+  language: buildConfig.language === "en" ? "en" : "vi",
+  languageExplicit: false,
+  statsStyle:
+    configuredUserDefaults.statsStyle === "circles" ||
+    (configuredUserDefaults.statsStyle == null && buildConfig.statsStyle === "circles")
+      ? "circles"
+      : "bars",
+  hudTransparent: configuredUserDefaults.hudTransparent === true,
   steamId: null,
   overlayToken: null,
-  opacity: 1,
-  layout: null,
-  panels: null,
+  opacity:
+    typeof configuredUserDefaults.opacity === "number" && Number.isFinite(configuredUserDefaults.opacity)
+      ? Math.max(0.3, Math.min(1, configuredUserDefaults.opacity))
+      : 1,
+  layout:
+    configuredUserDefaults.layout && typeof configuredUserDefaults.layout === "object"
+      ? configuredUserDefaults.layout
+      : null,
+  panels:
+    configuredUserDefaults.panels && typeof configuredUserDefaults.panels === "object"
+      ? configuredUserDefaults.panels
+      : null,
   theme: defaultTheme,
   radarBounds: null,
-  radarSize: 320,
-  radarRange: 1,
-  radarLabels: false,
-  radarShape: "circle",
-  radarOpen: false,
-  cursorEnabled: false,
-  cursorKey: "Insert",
-  cursorMode: "toggle",
-  dashKey: "F8",
-  streamerMode: false,
-  compatMode: false,
+  radarSize:
+    typeof configuredUserDefaults.radarSize === "number" && Number.isFinite(configuredUserDefaults.radarSize)
+      ? Math.max(180, Math.min(560, Math.round(configuredUserDefaults.radarSize)))
+      : 320,
+  radarRange:
+    typeof configuredUserDefaults.radarRange === "number" &&
+    configuredUserDefaults.radarRange >= 0 &&
+    configuredUserDefaults.radarRange <= 3
+      ? Math.round(configuredUserDefaults.radarRange)
+      : 1,
+  radarLabels: configuredUserDefaults.radarLabels === true,
+  radarShape: normalizeRadarShape(configuredUserDefaults.radarShape ?? buildConfig.radarShape),
+  radarOpen: configuredUserDefaults.radarOpen === true,
+  cursorEnabled: configuredUserDefaults.cursorEnabled === true,
+  cursorKey:
+    typeof configuredUserDefaults.cursorKey === "string" && configuredUserDefaults.cursorKey
+      ? configuredUserDefaults.cursorKey
+      : "Insert",
+  cursorMode: configuredUserDefaults.cursorMode === "hold" ? "hold" : "toggle",
+  dashKey:
+    typeof configuredUserDefaults.dashKey === "string" && configuredUserDefaults.dashKey
+      ? configuredUserDefaults.dashKey
+      : buildString("dashKey", "F8"),
+  streamerMode: configuredUserDefaults.streamerMode === true,
+  compatMode: configuredUserDefaults.compatMode === true,
 };
 
-const isHex = (v) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
 const normalizeTheme = (t) => {
   const src = t && typeof t === "object" ? t : {};
   const st = src.stat && typeof src.stat === "object" ? src.stat : {};
@@ -72,42 +151,57 @@ const normalizeTheme = (t) => {
 };
 
 const asStringOrNull = (v) => (typeof v === "string" && v.length > 0 ? v : null);
-const asString = (v, fallback) =>
-  typeof v === "string" && v.trim() ? v.trim() : fallback;
 
 const normalizeSettings = (raw) => {
   const s = raw && typeof raw === "object" ? raw : {};
   const steamIdRaw = typeof s.steamId === "string" ? s.steamId.trim() : "";
   return {
-    serverName: normalizeServerName(s.serverName),
-    apiBaseUrl: asString(s.apiBaseUrl, defaultSettings.apiBaseUrl),
+    serverName: defaultSettings.serverName,
+    overlayLabel: defaultSettings.overlayLabel,
+    apiBaseUrl: defaultSettings.apiBaseUrl,
+    language:
+      s.languageExplicit === true && (s.language === "en" || s.language === "vi")
+        ? s.language
+        : defaultSettings.language,
+    languageExplicit: s.languageExplicit === true,
+    statsStyle: s.statsStyle === "circles" || (s.statsStyle == null && defaultSettings.statsStyle === "circles") ? "circles" : "bars",
+    hudTransparent:
+      typeof s.hudTransparent === "boolean" ? s.hudTransparent : defaultSettings.hudTransparent,
     steamId: /^\d{17}$/.test(steamIdRaw) ? steamIdRaw : null,
     overlayToken: asStringOrNull(s.overlayToken),
     opacity:
       typeof s.opacity === "number" && Number.isFinite(s.opacity)
         ? Math.max(0.3, Math.min(1, s.opacity))
-        : 1,
-    layout: s.layout && typeof s.layout === "object" ? s.layout : null,
-    panels: s.panels && typeof s.panels === "object" ? s.panels : null,
+        : defaultSettings.opacity,
+    layout:
+      s.layout && typeof s.layout === "object" ? s.layout : defaultSettings.layout,
+    panels:
+      s.panels && typeof s.panels === "object" ? s.panels : defaultSettings.panels,
     theme: normalizeTheme(s.theme),
     radarBounds: s.radarBounds && typeof s.radarBounds === "object" ? s.radarBounds : null,
     radarSize:
       typeof s.radarSize === "number" && Number.isFinite(s.radarSize)
         ? Math.max(180, Math.min(560, Math.round(s.radarSize)))
-        : 320,
+        : defaultSettings.radarSize,
     radarRange:
       typeof s.radarRange === "number" && s.radarRange >= 0 && s.radarRange <= 3
         ? Math.round(s.radarRange)
-        : 1,
-    radarLabels: Boolean(s.radarLabels),
-    radarShape: normalizeRadarShape(s.radarShape),
-    radarOpen: Boolean(s.radarOpen),
-    cursorEnabled: Boolean(s.cursorEnabled),
-    cursorKey: typeof s.cursorKey === "string" && s.cursorKey ? s.cursorKey : "Insert",
-    cursorMode: s.cursorMode === "hold" ? "hold" : "toggle",
-    dashKey: typeof s.dashKey === "string" ? s.dashKey : "F8",
-    streamerMode: Boolean(s.streamerMode),
-    compatMode: Boolean(s.compatMode),
+        : defaultSettings.radarRange,
+    radarLabels:
+      typeof s.radarLabels === "boolean" ? s.radarLabels : defaultSettings.radarLabels,
+    radarShape: normalizeRadarShape(s.radarShape ?? defaultSettings.radarShape),
+    radarOpen: typeof s.radarOpen === "boolean" ? s.radarOpen : defaultSettings.radarOpen,
+    cursorEnabled:
+      typeof s.cursorEnabled === "boolean" ? s.cursorEnabled : defaultSettings.cursorEnabled,
+    cursorKey:
+      typeof s.cursorKey === "string" && s.cursorKey ? s.cursorKey : defaultSettings.cursorKey,
+    cursorMode:
+      s.cursorMode === "hold" || s.cursorMode === "toggle" ? s.cursorMode : defaultSettings.cursorMode,
+    dashKey: typeof s.dashKey === "string" ? s.dashKey : defaultSettings.dashKey,
+    streamerMode:
+      typeof s.streamerMode === "boolean" ? s.streamerMode : defaultSettings.streamerMode,
+    compatMode:
+      typeof s.compatMode === "boolean" ? s.compatMode : defaultSettings.compatMode,
   };
 };
 
@@ -132,14 +226,36 @@ const decryptToken = (stored) => {
   return stored;
 };
 
-const readSettings = () => {
+const readRawSettings = (settingsFile) => {
   try {
-    const s = normalizeSettings(JSON.parse(fs.readFileSync(SETTINGS_FILE(), "utf8")));
-    s.overlayToken = decryptToken(s.overlayToken);
-    return s;
+    return JSON.parse(fs.readFileSync(settingsFile, "utf8"));
   } catch {
-    return { ...defaultSettings };
+    return null;
   }
+};
+
+const readSettings = () => {
+  const current = readRawSettings(SETTINGS_FILE());
+  if (current) {
+    const settings = normalizeSettings(current);
+    settings.overlayToken = decryptToken(settings.overlayToken);
+    return settings;
+  }
+
+  const legacy = readRawSettings(legacySettingsFile);
+  const renamed = readRawSettings(renamedSettingsFile);
+  if (!legacy && !renamed) return { ...defaultSettings };
+
+  const settings = normalizeSettings({ ...(legacy || {}), ...(renamed || {}) });
+  settings.overlayToken = null;
+  for (const source of [renamed, legacy]) {
+    const token = decryptToken(asStringOrNull(source?.overlayToken));
+    if (token) {
+      settings.overlayToken = token;
+      break;
+    }
+  }
+  return settings;
 };
 
 const writeSettings = (patch) => {
@@ -151,6 +267,14 @@ const writeSettings = (patch) => {
   fs.mkdirSync(path.dirname(SETTINGS_FILE()), { recursive: true });
   fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(onDisk, null, 2), "utf8");
   return merged;
+};
+
+const migrateSettingsIfNeeded = () => {
+  if (readRawSettings(SETTINGS_FILE())) return;
+  if (!fs.existsSync(legacySettingsFile) && !fs.existsSync(renamedSettingsFile)) return;
+  try {
+    writeSettings({});
+  } catch {}
 };
 
 if (readSettings().compatMode) {
@@ -180,7 +304,8 @@ const createWindow = () => {
     y: primary.bounds.y,
     width: primary.bounds.width,
     height: primary.bounds.height,
-    title: `${initialSettings.serverName} Overlay`,
+    title: `${initialSettings.serverName} ${initialSettings.overlayLabel}`.trim(),
+    icon: path.join(__dirname, "tray.ico"),
     frame: false,
     transparent: true,
     backgroundColor: "#00000000",
@@ -249,6 +374,7 @@ function openRadar() {
     hasShadow: false,
     fullscreenable: false,
     show: false,
+    icon: path.join(__dirname, "tray.ico"),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -303,6 +429,10 @@ function setCursor(on) {
     }
   } else {
     try { mainWindow.blur(); } catch {}
+    try {
+      const n = loadNw();
+      if (gameHwnd && n) n.focusWindow(gameHwnd);
+    } catch {}
   }
   mainWindow.webContents.send("overlay:cursor", on);
 }
@@ -318,7 +448,7 @@ let dashShortcutAccelerator = null;
 let dashShortcutRegistered = false;
 
 function refreshBranding(settings = readSettings()) {
-  const title = `${settings.serverName} Overlay`;
+  const title = `${settings.serverName} ${settings.overlayLabel}`.trim();
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(title);
   if (!tray) return;
   tray.setToolTip(title);
@@ -454,7 +584,6 @@ function loadNw() {
   return nw || null;
 }
 
-const GAME_WINDOW_RE = /theisle|isle-win64/;
 let gameHwnd = null;
 let lastGameScanTs = 0;
 
@@ -466,12 +595,11 @@ function trackGame() {
   let activeIsGame = false;
   let activeIsOverlay = false;
   try {
-    if (gameHwnd && !n.IsWindow(gameHwnd)) gameHwnd = null;
+    if (gameHwnd && (!n.IsWindow(gameHwnd) || n.windowPid(gameHwnd) === process.pid)) gameHwnd = null;
     if (!gameHwnd && Date.now() - lastGameScanTs > 3000) {
       lastGameScanTs = Date.now();
-      gameHwnd = n.findWindow(
-        (title, imagePath) => GAME_WINDOW_RE.test(imagePath) || GAME_WINDOW_RE.test(title),
-      );
+      const candidate = n.findWindow(isGameWindowCandidate);
+      gameHwnd = candidate && n.windowPid(candidate) !== process.pid ? candidate : null;
     }
     if (gameHwnd) {
       const b = n.windowBounds(gameHwnd);
@@ -666,7 +794,6 @@ ipcMain.handle("overlay:setSettings", (_e, next) => {
   }
   radarSend("settings:changed", merged);
   if (typeof next?.dashKey === "string" && merged.dashKey !== prev.dashKey) registerDashShortcut();
-  if (typeof next?.serverName === "string" && merged.serverName !== prev.serverName) refreshBranding(merged);
   return merged;
 });
 ipcMain.handle("overlay:getState", () => ({ gameDetected: gameBounds != null }));
@@ -815,15 +942,20 @@ ipcMain.handle("updater:check", () => {
 });
 ipcMain.handle("updater:getState", () => lastUpdaterState);
 
-const AUTH_PROTOCOL = "isle-overlay";
-if (process.defaultApp && process.argv.length >= 2) {
-  app.setAsDefaultProtocolClient(AUTH_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
-} else {
-  app.setAsDefaultProtocolClient(AUTH_PROTOCOL);
+const AUTH_PROTOCOLS = ["theislevnhud", "isle-overlay"];
+const isAuthProtocolUrl = (value) =>
+  typeof value === "string"
+  && AUTH_PROTOCOLS.some((protocol) => value.startsWith(`${protocol}://`));
+for (const protocol of AUTH_PROTOCOLS) {
+  if (process.defaultApp && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(protocol, process.execPath, [path.resolve(process.argv[1])]);
+  } else {
+    app.setAsDefaultProtocolClient(protocol);
+  }
 }
 
 function handleDeepLink(rawUrl) {
-  if (typeof rawUrl !== "string" || rawUrl.indexOf(`${AUTH_PROTOCOL}://`) !== 0) return;
+  if (!isAuthProtocolUrl(rawUrl)) return;
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -871,12 +1003,13 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on("second-instance", (_e, argv) => {
-    const url = argv.find((a) => typeof a === "string" && a.indexOf(`${AUTH_PROTOCOL}://`) === 0);
+    const url = argv.find(isAuthProtocolUrl);
     if (url) handleDeepLink(url);
   });
   app.on("open-url", (_e, url) => handleDeepLink(url));
 
   app.whenReady().then(() => {
+    migrateSettingsIfNeeded();
     createWindow();
     createTray();
     registerDashShortcut();
@@ -893,7 +1026,7 @@ if (!gotLock) {
     setInterval(() => {
       void checkLicense();
     }, 5 * 60 * 1000);
-    const startUrl = process.argv.find((a) => typeof a === "string" && a.indexOf(`${AUTH_PROTOCOL}://`) === 0);
+    const startUrl = process.argv.find(isAuthProtocolUrl);
     if (startUrl) handleDeepLink(startUrl);
   });
 }
