@@ -1,5 +1,9 @@
 # TheIsleVNHud
 
+> [!IMPORTANT]
+> This is the **Anh Em 3 Miền Only** edition branch. Use `main` for the generic
+> build without server name or online-player integration.
+
 Customizable Windows in-game HUD for **The Isle**, based on
 [reversum/isle-overlay](https://github.com/reversum/isle-overlay).
 
