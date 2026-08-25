@@ -1,0 +1,25 @@
+Copyright Notice and No-License Declaration
+
+Upstream work:
+  IsleOverlay / isle-overlay
+  Copyright (c) 2026 Yannik F, YannikAufDie1, reversum, and other contributors.
+  Source: https://github.com/reversum/isle-overlay
+
+Custom changes:
+  TheIsleCustomHud
+  Copyright (c) 2026 TheIsleAE3Mien and its contributors.
+
+The upstream repository did not include a license grant when its source was
+imported into this repository. Accordingly, no open-source license or other
+permission to use, copy, modify, publish, distribute, sublicense, or sell the
+upstream work is asserted or implied here. All rights remain with their
+respective copyright holders except where applicable law provides otherwise or
+the copyright holder grants permission separately.
+
+This file documents provenance and copyright status. It does not grant rights
+to the upstream work. Obtain permission from the upstream copyright holder
+before public redistribution or other use that requires permission.
+
+Any independently copyrightable custom changes are also all rights reserved
+unless their author provides a separate written license.
+
