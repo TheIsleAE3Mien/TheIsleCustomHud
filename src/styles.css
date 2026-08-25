@@ -345,16 +345,6 @@ body {
   border-radius: 999px;
   font-weight: 700;
 }
-.serverInfoFreshness {
-  margin-top: 5px;
-  color: var(--faint);
-  font-family: var(--mono);
-  font-size: 8px;
-}
-.serverInfoFreshness.stale {
-  color: var(--amber);
-}
-
 .frame {
   width: 214px;
   background: linear-gradient(180deg, var(--panel-2), var(--panel));

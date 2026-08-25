@@ -837,9 +837,9 @@ function dispatchLiveFrame(frame) {
   }
 }
 
-// Renderer polls every 30 seconds. Keep the main-process cache slightly shorter
+// Renderer polls every 60 seconds. Keep the main-process cache slightly shorter
 // so every scheduled poll can observe a newly published provider snapshot.
-const SERVER_STATUS_CACHE_MS = 25000;
+const SERVER_STATUS_CACHE_MS = 55000;
 let serverStatusCache = null;
 let serverStatusFetchedAt = 0;
 let serverStatusRequest = null;

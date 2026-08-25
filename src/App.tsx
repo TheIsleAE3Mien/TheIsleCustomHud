@@ -346,16 +346,6 @@ function validPlayerCount(...values: Array<number | null | undefined>): number |
   return typeof value === "number" ? Math.floor(value) : null;
 }
 
-function formatServerDataAge(language: AppLanguage, lastUpdate?: number | null): string | null {
-  if (typeof lastUpdate !== "number" || !Number.isFinite(lastUpdate) || lastUpdate <= 0) return null;
-  const ageSeconds = Math.max(0, Math.floor(Date.now() / 1000 - lastUpdate));
-  if (ageSeconds < 60) return language === "vi" ? "Dữ liệu vừa cập nhật" : "Data updated just now";
-  const minutes = Math.floor(ageSeconds / 60);
-  if (minutes < 60) return language === "vi" ? `Dữ liệu ${minutes} phút trước` : `Data from ${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  return language === "vi" ? `Dữ liệu ${hours} giờ trước` : `Data from ${hours} hr ago`;
-}
-
 function ServerInfoWidget({
   me,
   status,
@@ -379,10 +369,6 @@ function ServerInfoWidget({
   const statusText = hasMonitoringStatus
     ? t(isOnline ? "Server online" : "Server offline")
     : t(isOnline ? "Player online" : "Player offline");
-  const dataAge = formatServerDataAge(language, status?.lastUpdate);
-  const staleData =
-    typeof status?.lastUpdate === "number" && Date.now() / 1000 - status.lastUpdate >= 120;
-
   return (
     <div
       className="serverInfoHud dragHandle"
@@ -408,11 +394,6 @@ function ServerInfoWidget({
           </span>
         ) : null}
       </div>
-      {dataAge ? (
-        <div className={`serverInfoFreshness ${staleData ? "stale" : ""}`}>
-          GameMonitoring · {dataAge}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -959,7 +940,7 @@ function useServerStatus(enabled: boolean): ServerStatus | null {
       if (alive) setStatus(next);
     };
     void tick();
-    const id = window.setInterval(tick, 30000);
+    const id = window.setInterval(tick, 60000);
     return () => {
       alive = false;
       window.clearInterval(id);

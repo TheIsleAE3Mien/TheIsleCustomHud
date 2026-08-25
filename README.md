@@ -180,11 +180,10 @@ no GameMonitoring server ID. Server-specific configuration is maintained on a
 separate edition branch instead of being embedded in generic releases.
 
 The `ae3mien` branch uses GameMonitoring server ID `14040695`. It displays the
-full server name, online/offline state, player count, slot limit, and snapshot
-age. The client polls every 30 seconds, but
+full server name, online/offline state, player count, and slot limit. The client
+polls every 60 seconds, but
 GameMonitoring supplies monitored snapshots rather than a realtime stream, so
-the displayed count can lag behind the game by several minutes. The widget
-shows `Dữ liệu X phút trước` from the API `last_update` value.
+the displayed count can lag behind the game by several minutes.
 
 Build the Windows installer locally:
 
