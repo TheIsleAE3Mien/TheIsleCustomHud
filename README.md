@@ -51,8 +51,8 @@ names visible with a `BẠN` marker and their current distance.
 - `F8` opens or closes only the dashboard; enabled HUD widgets remain visible in
   game.
 - Draggable and freely resizable widgets for stats, Prime progress,
-  heart/health, compass, and radar. Resize handles are shown only while the
-  dashboard is open.
+  heart/health, compass, radar, and survival notifications. Open the dashboard
+  to show a notification preview and its resize handle.
 - Vietnamese is the default language, with an English/Vietnamese language
   selector for players.
 - Developer-controlled server branding and backend endpoint, plus player HUD
@@ -66,6 +66,9 @@ names visible with a `BẠN` marker and their current distance.
 - Dinosaur identity, species, sex, server, online state, and growth.
 - Health, stamina, hunger, thirst, and growth indicators with bar or circular
   layouts.
+- Sequential low/critical survival warnings for health, hunger, thirst, and
+  stamina. Only one warning is shown at a time, and its saved position/scale can
+  be changed from the F8 dashboard.
 - Carb, protein, and lipid nutrition tracking.
 - Prime/Prime Elder eligibility, completed conditions, and quest checklist.
 - Live updates over WebSocket.
@@ -114,7 +117,9 @@ names visible with a `BẠN` marker and their current distance.
 ### Desktop delivery
 
 - Windows x64 NSIS installer.
-- In-app update checks backed by this repository's GitHub Releases.
+- Automatic in-app updates backed by this repository's GitHub Releases. The HUD
+  checks every 10 minutes, downloads in the background, and waits until the game
+  and dashboard are closed before installing.
 - GitHub Actions validation on pushes and pull requests.
 - Automatic GitHub Release assets for version tags such as `v0.4.0`.
 

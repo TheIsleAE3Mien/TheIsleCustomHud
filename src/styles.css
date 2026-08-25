@@ -815,6 +815,159 @@ body {
   color: var(--text);
   border-color: var(--phos-dim);
 }
+
+.hudAlerts {
+  position: relative;
+  display: flex;
+  width: min(460px, calc(100vw - 24px));
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.notificationPanel {
+  z-index: 350;
+}
+.dashboardOpen .hudAlerts {
+  cursor: grab;
+  pointer-events: auto;
+}
+.dashboardOpen .hudAlerts:active {
+  cursor: grabbing;
+}
+.hudAlert {
+  --alert-color: #ffcf4a;
+  position: relative;
+  display: grid;
+  min-height: 66px;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  overflow: hidden;
+  padding: 10px 14px 11px 10px;
+  border: 1px solid color-mix(in srgb, var(--alert-color) 38%, rgba(96, 112, 101, 0.38));
+  border-left: 3px solid var(--alert-color);
+  border-radius: 9px;
+  background: linear-gradient(105deg, rgba(7, 12, 10, 0.97), rgba(10, 15, 13, 0.94));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.62), 0 0 12px color-mix(in srgb, var(--alert-color) 12%, transparent);
+  animation: hudAlertIn 0.22s ease-out both;
+}
+.hudAlert.warning { --alert-color: #ffcf4a; }
+.hudAlert.critical { --alert-color: #ff5a5a; }
+.hudAlert.info { --alert-color: #5ab6ff; }
+.hudAlert.success { --alert-color: var(--phos); }
+.hudAlertIcon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--alert-color) 38%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--alert-color) 11%, rgba(4, 8, 6, 0.94));
+  color: var(--alert-color);
+}
+.hudAlertIcon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hudAlertCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.hudAlertTitle {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.hudAlertMessage {
+  color: color-mix(in srgb, var(--text) 68%, var(--muted));
+  font-size: 11px;
+  line-height: 1.35;
+}
+.hudAlertValue {
+  align-self: center;
+  color: var(--alert-color);
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 800;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--alert-color) 34%, transparent);
+  white-space: nowrap;
+}
+.hudAlertProgress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.hudAlertProgress > span {
+  display: block;
+  height: 100%;
+  background: var(--alert-color);
+  box-shadow: 0 0 7px var(--alert-color);
+  transition: width 0.2s ease-out;
+}
+@keyframes hudAlertIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.updateStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(5, 10, 7, 0.66);
+  color: var(--muted);
+  font-size: 11px;
+}
+.updateStatus strong {
+  margin-left: auto;
+  color: var(--phos);
+  font-family: var(--mono);
+}
+.updateStatusDot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.updateStatus.checking .updateStatusDot,
+.updateStatus.available .updateStatusDot,
+.updateStatus.downloading .updateStatusDot {
+  background: #5ab6ff;
+  box-shadow: 0 0 7px rgba(90, 182, 255, 0.65);
+}
+.updateStatus.downloaded .updateStatusDot,
+.updateStatus.none .updateStatusDot {
+  background: var(--phos);
+  box-shadow: 0 0 7px var(--phos-dim);
+}
+.updateStatus.error .updateStatusDot {
+  background: var(--danger);
+}
+.tbtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
 .sig {
   width: 7px;
   height: 7px;
@@ -1764,6 +1917,22 @@ body {
   * {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .hudAlert {
+    min-height: 60px;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px 10px 9px 8px;
+  }
+  .hudAlertIcon {
+    width: 30px;
+    height: 30px;
+  }
+  .hudAlertMessage {
+    font-size: 10px;
   }
 }
 

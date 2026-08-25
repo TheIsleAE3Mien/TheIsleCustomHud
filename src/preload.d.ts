@@ -156,7 +156,13 @@ export type TrollFrame = {
 };
 
 export type AuthInfo = { steamId: string | null; authed: boolean };
-export type UpdaterState = { state: string; version?: string; percent?: number; message?: string };
+export type UpdaterState = {
+  state: "idle" | "checking" | "available" | "none" | "downloading" | "downloaded" | "error" | string;
+  version?: string;
+  percent?: number;
+  message?: string;
+  deferred?: boolean;
+};
 
 export type ApiResult<T = unknown> = T & { error?: string; status?: number };
 export type ServerStatus = {

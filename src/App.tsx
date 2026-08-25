@@ -5,6 +5,7 @@ import { RadarPanel } from "./RadarPanel";
 import { TrollLayer } from "./TrollLayer";
 import { ColorSwatch } from "./ColorPicker";
 import { CompassWidget } from "./CompassWidget";
+import { HudAlerts } from "./HudAlerts";
 import { clampToViewport } from "./drag";
 import { tr, translatePrimeQuest, type AppLanguage } from "./i18n";
 import {
@@ -20,6 +21,7 @@ import type {
   OverlayTheme,
   PlayerMe,
   ServerStatus,
+  UpdaterState,
 } from "./preload";
 
 const DEFAULT_THEME: OverlayTheme = {
@@ -101,12 +103,14 @@ function DraggablePanel({
   defaultPos,
   settings,
   resizeLabel,
+  className,
   children,
 }: {
   id: string;
   defaultPos: Pos;
   settings: OverlaySettings | null;
   resizeLabel: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   const saved = (settings?.layout as Record<string, WidgetLayout> | null | undefined)?.[id];
@@ -271,7 +275,7 @@ function DraggablePanel({
   return (
     <div
       ref={panelRef}
-      className="panel resizablePanel hudWidgetPanel interactive-region"
+      className={`panel resizablePanel hudWidgetPanel interactive-region ${className ?? ""}`}
       style={{ left: pos.x, top: pos.y, width: scaledWidth, height: scaledHeight }}
       onMouseDown={onDown}
       onMouseEnter={() => (hovered.current = true)}
@@ -431,6 +435,7 @@ function SettingsPanel({
   panels,
   opacity,
   authed,
+  updater,
   onTheme,
   onOpacity,
   onTogglePanel,
@@ -443,6 +448,7 @@ function SettingsPanel({
   panels: Record<string, boolean>;
   opacity: number;
   authed: boolean;
+  updater: UpdaterState;
   onTheme: (t: OverlayTheme) => void;
   onOpacity: (v: number) => void;
   onTogglePanel: (k: string) => void;
@@ -862,6 +868,39 @@ function SettingsPanel({
           <div className="secLabel">{t("About")}</div>
           <div className="hint">{[settings?.serverName ?? "TheIsleVNHud", settings?.overlayLabel].filter(Boolean).join(" ")} · v{__APP_VERSION__}</div>
           <div className="hint">Coded by RayJacobs</div>
+          <div className="secLabel">{t("Updates")}</div>
+          <div className="hint">{t("Auto-update is enabled. The HUD checks every 10 minutes and installs after you leave the game.")}</div>
+          <div className={`updateStatus ${updater.state}`}>
+            <span className="updateStatusDot" />
+            <span>{t(
+              updater.state === "checking"
+                ? "Checking for updates…"
+                : updater.state === "available"
+                  ? "Update available"
+                  : updater.state === "downloading"
+                    ? "Downloading update"
+                    : updater.state === "downloaded"
+                      ? "Update ready"
+                      : updater.state === "error"
+                        ? "Update check failed."
+                        : "You're up to date."
+            )}</span>
+            {updater.state === "downloading" ? <strong>{Math.round(updater.percent ?? 0)}%</strong> : null}
+          </div>
+          <div className="menuFoot">
+            <button
+              className="tbtn ghost"
+              disabled={updater.state === "checking" || updater.state === "downloading" || updater.state === "downloaded"}
+              onClick={() => void window.isleOverlay.updaterCheck()}
+            >
+              {t("Check for updates")}
+            </button>
+            {updater.state === "downloaded" ? (
+              <button className="tbtn" onClick={() => void window.isleOverlay.updaterRestart()}>
+                {t("Restart and install")}
+              </button>
+            ) : null}
+          </div>
           </>)}
           </div>
         </div>
@@ -969,6 +1008,24 @@ function mergeLive(me: PlayerMe | null, live: LiveFrame | null): PlayerMe | null
   };
 }
 
+function useUpdaterState(): UpdaterState {
+  const [updater, setUpdater] = useState<UpdaterState>({ state: "idle" });
+  useEffect(() => {
+    let alive = true;
+    void window.isleOverlay.updaterGetState().then((next) => {
+      if (alive) setUpdater(next);
+    });
+    const off = window.isleOverlay.onUpdaterEvent((next) => {
+      if (alive) setUpdater(next);
+    });
+    return () => {
+      alive = false;
+      off();
+    };
+  }, []);
+  return updater;
+}
+
 export function App() {
   const [booted, setBooted] = useState(false);
   const [auth, setAuth] = useState<AuthInfo>({ steamId: null, authed: false });
@@ -1022,6 +1079,7 @@ export function App() {
   const serverStatus = useServerStatus(
     auth.authed && panels.server !== false && settings?.serverInfoEnabled === true,
   );
+  const updater = useUpdaterState();
 
   useEffect(() => {
     if (!auth.authed) {
@@ -1139,6 +1197,21 @@ export function App() {
   return (
     <div className={`overlay ${settings?.hudTransparent ? "hudTransparent" : ""} ${mainOpen ? "dashboardOpen" : ""}`}>
       <TrollLayer />
+      <DraggablePanel
+        id="w_alerts"
+        defaultPos={{ x: Math.max(12, window.innerWidth - 478), y: 18 }}
+        settings={settings}
+        resizeLabel={t("Resize HUD")}
+        className="notificationPanel"
+      >
+        <HudAlerts
+          me={view}
+          active={auth.authed && isDino}
+          language={language}
+          updater={updater}
+          preview={mainOpen}
+        />
+      </DraggablePanel>
       {mainOpen ? (
         <MainWindow
           me={view}
@@ -1174,6 +1247,7 @@ export function App() {
           panels={panels}
           opacity={opacity}
           authed={auth.authed}
+          updater={updater}
           onTheme={setTheme}
           onOpacity={setOpacity}
           onTogglePanel={togglePanel}

@@ -403,11 +403,80 @@ let mainWindow = null;
 let gameBounds = null;
 let overlayFocusActive = false;
 let lastUpdaterState = { state: "idle" };
+let updaterInitialized = false;
+let updateReadyToInstall = false;
+let updateInstallTimer = null;
+let lastUpdateProgressPercent = -1;
+let lastUpdateProgressAt = 0;
 const bootGraceUntil = Date.now() + 4000;
 let streamerModeActive = false;
 let lastShowTs = 0;
 let lastTopmostTs = 0;
 let lastOverlayState = { gameDetected: false, active: false, focused: false };
+
+function emitUpdaterState(payload) {
+  lastUpdaterState = payload;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("updater:event", payload);
+  }
+}
+
+function shouldDeferUpdateInstall() {
+  return lastOverlayState.gameDetected || dashOn;
+}
+
+function scheduleDownloadedUpdateInstall() {
+  if (!updateReadyToInstall) return;
+  if (shouldDeferUpdateInstall()) {
+    if (updateInstallTimer != null) {
+      clearTimeout(updateInstallTimer);
+      updateInstallTimer = null;
+    }
+    if (lastUpdaterState.state === "downloaded" && lastUpdaterState.deferred !== true) {
+      emitUpdaterState({ ...lastUpdaterState, deferred: true });
+    }
+    return;
+  }
+  if (updateInstallTimer != null) return;
+  if (lastUpdaterState.state === "downloaded" && lastUpdaterState.deferred !== false) {
+    emitUpdaterState({ ...lastUpdaterState, deferred: false });
+  }
+  updateInstallTimer = setTimeout(() => {
+    updateInstallTimer = null;
+    if (!updateReadyToInstall) return;
+    if (shouldDeferUpdateInstall()) {
+      scheduleDownloadedUpdateInstall();
+      return;
+    }
+    updateReadyToInstall = false;
+    try {
+      autoUpdater.quitAndInstall(true, true);
+    } catch (error) {
+      updateReadyToInstall = true;
+      emitUpdaterState({
+        state: "error",
+        message: error && (error.message || String(error)),
+      });
+    }
+  }, 5000);
+}
+
+async function requestUpdateCheck() {
+  if (!app.isPackaged || !updaterInitialized) return false;
+  if (updateReadyToInstall) return true;
+  if (lastUpdaterState.state === "checking" || lastUpdaterState.state === "downloading") return true;
+  emitUpdaterState({ state: "checking" });
+  try {
+    await autoUpdater.checkForUpdates();
+    return true;
+  } catch (error) {
+    emitUpdaterState({
+      state: "error",
+      message: error && (error.message || String(error)),
+    });
+    return false;
+  }
+}
 
 const createWindow = () => {
   const initialSettings = readSettings();
@@ -783,6 +852,7 @@ function trackGame() {
     lastOverlayState = nextOverlayState;
     mainWindow.webContents.send("overlay:state", nextOverlayState);
   }
+  scheduleDownloadedUpdateInstall();
 }
 
 async function apiFetch(method, pathname, body) {
@@ -1121,6 +1191,7 @@ ipcMain.handle("dash:recordKey", () => recordKey("dashKey"));
 ipcMain.handle("overlay:dashOpen", (_e, open) => {
   dashOn = !!open;
   setCursor(!!open);
+  scheduleDownloadedUpdateInstall();
 });
 
 ipcMain.handle("auth:steamLogin", () => {
@@ -1186,17 +1257,18 @@ ipcMain.handle("mapedit:getCatalog", () => {
 ipcMain.handle("updater:restart", () => {
   if (!app.isPackaged) return false;
   try {
+    updateReadyToInstall = false;
+    if (updateInstallTimer != null) {
+      clearTimeout(updateInstallTimer);
+      updateInstallTimer = null;
+    }
     autoUpdater.quitAndInstall(false, true);
     return true;
   } catch {
     return false;
   }
 });
-ipcMain.handle("updater:check", () => {
-  if (!app.isPackaged) return false;
-  autoUpdater.checkForUpdates().catch(() => {});
-  return true;
-});
+ipcMain.handle("updater:check", () => requestUpdateCheck());
 ipcMain.handle("updater:getState", () => lastUpdaterState);
 
 const AUTH_PROTOCOLS = ["theislevnhud", "isle-overlay"];
@@ -1313,22 +1385,38 @@ function initAutoUpdate() {
       autoUpdater.channel = updateChannel;
       autoUpdater.allowPrerelease = true;
     }
-    const emit = (payload) => {
-      lastUpdaterState = payload;
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("updater:event", payload);
-    };
-    autoUpdater.on("update-available", (i) => emit({ state: "available", version: i && i.version }));
-    autoUpdater.on("update-not-available", () => emit({ state: "none" }));
-    autoUpdater.on("download-progress", (p) => emit({ state: "downloading", percent: p ? Math.round(p.percent) : 0 }));
-    autoUpdater.on("update-downloaded", (i) => {
-      emit({ state: "downloaded", version: i && i.version });
-      setTimeout(() => {
-        try { autoUpdater.quitAndInstall(true, true); } catch {}
-      }, 1500);
+    updaterInitialized = true;
+    autoUpdater.on("update-available", (i) => {
+      emitUpdaterState({ state: "available", version: i && i.version });
     });
-    autoUpdater.on("error", (e) => emit({ state: "error", message: e && (e.message || String(e)) }));
-    autoUpdater.checkForUpdates().catch(() => {});
-    setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 10 * 60 * 1000);
+    autoUpdater.on("update-not-available", () => emitUpdaterState({ state: "none" }));
+    autoUpdater.on("download-progress", (p) => {
+      const now = Date.now();
+      const percent = p ? Math.max(0, Math.min(100, Math.round(p.percent))) : 0;
+      if (
+        percent !== 100
+        && percent < lastUpdateProgressPercent + 5
+        && now - lastUpdateProgressAt < 1000
+      ) return;
+      lastUpdateProgressPercent = percent;
+      lastUpdateProgressAt = now;
+      emitUpdaterState({ state: "downloading", percent });
+    });
+    autoUpdater.on("update-downloaded", (i) => {
+      updateReadyToInstall = true;
+      emitUpdaterState({
+        state: "downloaded",
+        version: i && i.version,
+        deferred: shouldDeferUpdateInstall(),
+      });
+      scheduleDownloadedUpdateInstall();
+    });
+    autoUpdater.on("error", (e) => {
+      emitUpdaterState({ state: "error", message: e && (e.message || String(e)) });
+    });
+    void requestUpdateCheck();
+    setInterval(() => void requestUpdateCheck(), 10 * 60 * 1000);
   } catch {
+    updaterInitialized = false;
   }
 }
