@@ -3,10 +3,19 @@ export type OverlayTheme = {
   stat: { health: string; stamina: string; food: string; water: string };
 };
 
+export type MapTrackingSettings = {
+  sanctuaries: boolean;
+  migration: boolean;
+  patrol: boolean;
+  places: boolean;
+  friends: boolean;
+};
+
 export type OverlaySettings = {
   serverName: string;
   overlayLabel: string;
   apiBaseUrl: string;
+  serverInfoEnabled: boolean;
   language: "en" | "vi";
   languageExplicit: boolean;
   statsStyle: "bars" | "circles";
@@ -21,6 +30,7 @@ export type OverlaySettings = {
   radarSize: number;
   radarRange: number;
   radarLabels: boolean;
+  mapTracking: MapTrackingSettings;
   radarShape: "circle" | "square";
   radarOpen: boolean;
   cursorEnabled: boolean;
@@ -40,6 +50,10 @@ export type PlayerMe = {
   name: string;
   server?: string | null;
   online?: boolean;
+  playersOnline?: number | null;
+  playerCount?: number | null;
+  onlinePlayers?: number | null;
+  maxPlayers?: number | null;
   species?: string | null;
   female?: boolean | null;
   growth?: number | null;
@@ -145,6 +159,17 @@ export type AuthInfo = { steamId: string | null; authed: boolean };
 export type UpdaterState = { state: string; version?: string; percent?: number; message?: string };
 
 export type ApiResult<T = unknown> = T & { error?: string; status?: number };
+export type ServerStatus = {
+  configured: boolean;
+  id?: number;
+  name?: string | null;
+  online?: boolean;
+  playersOnline?: number | null;
+  maxPlayers?: number | null;
+  lastUpdate?: number | null;
+  stale?: boolean;
+  error?: string;
+};
 
 export type IsleOverlayBridge = {
   getSettings: () => Promise<OverlaySettings>;
@@ -160,6 +185,7 @@ export type IsleOverlayBridge = {
   apiGet: <T = unknown>(pathname: string) => Promise<ApiResult<T>>;
   apiPost: <T = unknown>(pathname: string, body?: unknown) => Promise<ApiResult<T>>;
   apiGetFile: (pathname: string) => Promise<{ dataUrl?: string; error?: string; status?: number }>;
+  getServerStatus: () => Promise<ServerStatus>;
   getMapCatalog: () => Promise<MapCatalog>;
   onLive: (cb: (d: LiveFrame) => void) => () => void;
   onTicket: (cb: (frame: { type: string; ticketId?: string }) => void) => () => void;

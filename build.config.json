@@ -2,6 +2,9 @@
   "serverName": "TheIsleVNHud",
   "overlayLabel": "",
   "apiBaseUrl": "https://islepilot.eu",
+  "gameMonitoringServerId": null,
+  "editionName": "",
+  "updateChannel": "latest",
   "language": "vi",
   "statsStyle": "circles",
   "dashKey": "F8",
@@ -13,6 +16,7 @@
     "opacity": 1,
     "layout": {
       "main": { "x": 767, "y": 293 },
+      "w_server": { "x": 2267, "y": 72, "scale": 1 },
       "w_radar": { "x": 0, "y": 0, "scale": 1.0371428571428571 },
       "w_prime": { "x": 0, "y": 355, "scale": 1.7298652515570045 },
       "w_stats": { "x": 862, "y": 1225, "scale": 2.5 },
@@ -20,6 +24,7 @@
       "w_compass": { "x": 370.3125, "y": 0, "scale": 0.9397623003819859 }
     },
     "panels": {
+      "server": true,
       "heart": true,
       "compass": true,
       "radar": true,
@@ -38,6 +43,13 @@
     "radarSize": 350,
     "radarRange": 1,
     "radarLabels": true,
+    "mapTracking": {
+      "sanctuaries": true,
+      "migration": true,
+      "patrol": true,
+      "places": true,
+      "friends": true
+    },
     "radarShape": "square",
     "radarOpen": false,
     "cursorEnabled": false,

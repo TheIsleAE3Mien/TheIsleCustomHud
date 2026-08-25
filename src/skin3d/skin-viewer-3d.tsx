@@ -192,7 +192,7 @@ export function SkinViewer3D({
   return (
     <div className="skinViewer">
       <Canvas
-        dpr={[1, 2]}
+        dpr={[1, 1.5]}
         camera={{ position: dino.cameraStart ?? [-19.33, 0.89, -0.02], fov: 40 }}
         gl={{
           toneMapping: THREE.ACESFilmicToneMapping,

@@ -54,6 +54,8 @@ names visible with a `BẠN` marker and their current distance.
 - Developer-controlled server branding and backend endpoint, plus player HUD
   opacity, transparent background, accent/stat colors, streamer mode, and
   compatibility mode.
+- Optional server-edition widget for builds that provide a GameMonitoring
+  server ID. Generic builds leave this integration disabled.
 
 ### Player dashboard and HUD
 
@@ -68,6 +70,8 @@ names visible with a `BẠN` marker and their current distance.
 
 - Floating radar/minimap with circle or square shape plus configurable size,
   range, and labels.
+- Shared Radar/Compass filters for sanctuaries, migration zones, patrol zones,
+  other places, and friends.
 - Live player position and facing direction.
 - Smooth horizontal compass centered at the top of the screen. It shows nearby
   named map locations within 1,500 metres, avoids overlapping labels, caches map
@@ -148,6 +152,8 @@ fresh installation:
 - `language` accepts `en` or `vi`.
 - `statsStyle` accepts `bars` or `circles`.
 - `dashKey`, `radarShape`, and `accentColor` set their initial values.
+- `gameMonitoringServerId` is `null` in the generic configuration, which hides
+  the server-status widget and prevents GameMonitoring requests.
 - `defaultUserSettings` contains the sanitized default widget layout, scale,
   visibility, minimap, transparency, and visual settings used by a fresh
   installation.
@@ -163,6 +169,19 @@ radar, and colors from the in-app Settings panel. The build language is used
 until the user explicitly selects English or Vietnamese; that choice is then
 remembered.
 
+### Server editions
+
+The committed `build.config.json` is generic and deliberately contains no
+GameMonitoring server ID. Edition overrides live under `editions/` and are only
+copied to the temporary, ignored `build.edition.json` during an edition build.
+
+The AE3Miền edition uses `editions/ae3mien.json` with GameMonitoring server ID
+`14040695`. It displays the full server name, online/offline state, player count,
+slot limit, and snapshot age. The client polls every 30 seconds, but
+GameMonitoring supplies monitored snapshots rather than a realtime stream, so
+the displayed count can lag behind the game by several minutes. The widget
+shows `Dữ liệu X phút trước` from the API `last_update` value.
+
 Build the Windows installer locally:
 
 ```powershell
@@ -173,8 +192,8 @@ The installer is written to `release/TheIsleVNHud-<version>-Setup.exe`.
 
 ## GitHub Actions releases
 
-Every push and pull request runs the Windows build and uploads the installer as
-a workflow artifact. To create a GitHub Release:
+Every push and pull request runs the generic Windows build and uploads the
+installer as a workflow artifact. To create a generic GitHub Release:
 
 ```powershell
 npm version patch
@@ -185,6 +204,12 @@ The pushed `v*` tag must match the version in `package.json`. The workflow then
 creates the GitHub Release and attaches the `.exe`, update metadata, and
 blockmap. You can also run the workflow manually to produce a downloadable
 Actions artifact without publishing a Release.
+
+AE3Miền-only releases use a tag such as `v0.5.0-ae3mien.1`. Its base version
+must match `package.json`. The workflow injects `editions/ae3mien.json`, builds
+the separate `ae3mien` updater channel, marks the GitHub Release as a
+pre-release, and labels it **Anh Em 3 Miền Only**. Generic releases never receive
+that server ID or widget.
 
 ## Syncing upstream
 

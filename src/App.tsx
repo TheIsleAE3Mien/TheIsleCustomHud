@@ -7,6 +7,11 @@ import { ColorSwatch } from "./ColorPicker";
 import { CompassWidget } from "./CompassWidget";
 import { clampToViewport } from "./drag";
 import { tr, translatePrimeQuest, type AppLanguage } from "./i18n";
+import {
+  DEFAULT_MAP_TRACKING,
+  type MapTrackingKey,
+  type MapTrackingSettings,
+} from "./map-tracking";
 import type {
   AuthInfo,
   LiveFrame,
@@ -14,6 +19,7 @@ import type {
   OverlayState,
   OverlayTheme,
   PlayerMe,
+  ServerStatus,
 } from "./preload";
 
 const DEFAULT_THEME: OverlayTheme = {
@@ -333,12 +339,99 @@ function PrimePanel({ me, language }: { me: PlayerMe | null; language: AppLangua
   );
 }
 
+function validPlayerCount(...values: Array<number | null | undefined>): number | null {
+  const value = values.find((candidate) =>
+    typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0,
+  );
+  return typeof value === "number" ? Math.floor(value) : null;
+}
+
+function formatServerDataAge(language: AppLanguage, lastUpdate?: number | null): string | null {
+  if (typeof lastUpdate !== "number" || !Number.isFinite(lastUpdate) || lastUpdate <= 0) return null;
+  const ageSeconds = Math.max(0, Math.floor(Date.now() / 1000 - lastUpdate));
+  if (ageSeconds < 60) return language === "vi" ? "Dữ liệu vừa cập nhật" : "Data updated just now";
+  const minutes = Math.floor(ageSeconds / 60);
+  if (minutes < 60) return language === "vi" ? `Dữ liệu ${minutes} phút trước` : `Data from ${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  return language === "vi" ? `Dữ liệu ${hours} giờ trước` : `Data from ${hours} hr ago`;
+}
+
+function ServerInfoWidget({
+  me,
+  status,
+  language,
+}: {
+  me: PlayerMe;
+  status: ServerStatus | null;
+  language: AppLanguage;
+}) {
+  const t = (text: string) => tr(language, text);
+  const playerCount = validPlayerCount(
+    status?.playersOnline,
+    me.playersOnline,
+    me.playerCount,
+    me.onlinePlayers,
+  );
+  const maxPlayers = validPlayerCount(status?.maxPlayers, me.maxPlayers);
+  const hasMonitoringStatus = typeof status?.online === "boolean";
+  const isOnline = hasMonitoringStatus ? status.online === true : me.online === true;
+  const serverName = status?.name?.trim() || me.server || t("Unknown server");
+  const statusText = hasMonitoringStatus
+    ? t(isOnline ? "Server online" : "Server offline")
+    : t(isOnline ? "Player online" : "Player offline");
+  const dataAge = formatServerDataAge(language, status?.lastUpdate);
+  const staleData =
+    typeof status?.lastUpdate === "number" && Date.now() / 1000 - status.lastUpdate >= 120;
+
+  return (
+    <div
+      className="serverInfoHud dragHandle"
+      role="status"
+      aria-live="polite"
+      aria-label={`${t("Current server")}: ${serverName}. ${statusText}${playerCount !== null ? `, ${playerCount}/${maxPlayers ?? "?"} ${t("Players online")}` : ""}`}
+    >
+      <div className="serverInfoHeader">
+        <svg className="serverInfoIcon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="3" width="16" height="7" rx="2" />
+          <rect x="4" y="14" width="16" height="7" rx="2" />
+          <path d="M8 6.5h.01M8 17.5h.01M12 6.5h5M12 17.5h5" />
+        </svg>
+        <span>{t("Current server")}</span>
+      </div>
+      <div className="serverInfoName" title={serverName}>{serverName}</div>
+      <div className="serverInfoMeta">
+        <span className={`serverInfoDot ${isOnline ? "online" : "offline"}`} aria-hidden="true" />
+        <span>{statusText}</span>
+        {playerCount !== null ? (
+          <span className="serverInfoCount" title={t("Players online")}>
+            {playerCount}{maxPlayers !== null ? `/${maxPlayers}` : ""}
+          </span>
+        ) : null}
+      </div>
+      {dataAge ? (
+        <div className={`serverInfoFreshness ${staleData ? "stale" : ""}`}>
+          GameMonitoring · {dataAge}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 const PANELS: { key: string; label: string; soon?: boolean }[] = [
+  { key: "server", label: "Server info" },
   { key: "compass", label: "Compass" },
   { key: "stats", label: "Stats" },
   { key: "prime", label: "PRIME" },
   { key: "heart", label: "HP Heart" },
   { key: "radar", label: "Radar" },
+];
+
+const TRACKING_OPTIONS: Array<{ key: MapTrackingKey; label: string; color: string }> = [
+  { key: "sanctuaries", label: "Sanctuaries", color: "#79f2a6" },
+  { key: "migration", label: "Migration zones", color: "#ffce54" },
+  { key: "patrol", label: "Patrol zones", color: "#5ab6ff" },
+  { key: "places", label: "Other places", color: "#b79cff" },
+  { key: "friends", label: "Friends", color: "#7cf2a6" },
 ];
 
 function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
@@ -383,6 +476,9 @@ function SettingsPanel({
   const [radarSize, setRadarSize] = useState(settings?.radarSize ?? 320);
   const [radarRange, setRadarRange] = useState(settings?.radarRange ?? 1);
   const [radarLabels, setRadarLabels] = useState(settings?.radarLabels ?? false);
+  const [mapTracking, setMapTracking] = useState<MapTrackingSettings>(
+    settings?.mapTracking ?? DEFAULT_MAP_TRACKING,
+  );
   const [radarShape, setRadarShape] = useState<"circle" | "square">(settings?.radarShape ?? "circle");
   const RANGE_LABELS = ["CLOSE", "MID", "FAR", "MAX"];
   const [cursorEnabled, setCursorEnabled] = useState(settings?.cursorEnabled ?? false);
@@ -426,6 +522,7 @@ function SettingsPanel({
       setLanguage(s.language);
       setStatsStyle(s.statsStyle);
       setHudTransparent(Boolean(s.hudTransparent));
+      setMapTracking(s.mapTracking ?? DEFAULT_MAP_TRACKING);
     });
   }, []);
 
@@ -454,7 +551,7 @@ function SettingsPanel({
           <div className="secLabel">{t("Detached widgets")}</div>
           <div className="hint">{t("Enable widgets, drag them anywhere, and resize them from the bottom-right corner.")}</div>
           <div className="featRow">
-            {PANELS.map((p) => (
+            {PANELS.filter((p) => p.key !== "server" || settings?.serverInfoEnabled).map((p) => (
               <button
                 key={p.key}
                 className={`chip ${panels[p.key] ? "on" : ""}`}
@@ -574,6 +671,44 @@ function SettingsPanel({
             </button>
           </div>
           <div className="hint" style={{ marginTop: 6 }}>{t("Shows names for places and markers on the minimap.")}</div>
+
+          <div className="secLabel">{t("Tracked map items")}</div>
+          <div className="hint">{t("These filters are shared by the radar and compass.")}</div>
+          <div className="trackingGrid">
+            <button
+              type="button"
+              className={`trackingChip ${Object.values(mapTracking).every(Boolean) ? "on" : ""}`}
+              aria-pressed={Object.values(mapTracking).every(Boolean)}
+              onClick={() => {
+                const enabled = !Object.values(mapTracking).every(Boolean);
+                const next = Object.fromEntries(
+                  TRACKING_OPTIONS.map((option) => [option.key, enabled]),
+                ) as MapTrackingSettings;
+                setMapTracking(next);
+                void window.isleOverlay.setSettings({ mapTracking: next });
+              }}
+            >
+              <span className="trackingCheck" aria-hidden="true" />
+              <span>{t("All items")}</span>
+            </button>
+            {TRACKING_OPTIONS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={`trackingChip ${mapTracking[option.key] ? "on" : ""}`}
+                aria-pressed={mapTracking[option.key]}
+                style={{ ["--track-color" as string]: option.color }}
+                onClick={() => {
+                  const next = { ...mapTracking, [option.key]: !mapTracking[option.key] };
+                  setMapTracking(next);
+                  void window.isleOverlay.setSettings({ mapTracking: next });
+                }}
+              >
+                <span className="trackingCheck" aria-hidden="true" />
+                <span>{t(option.label)}</span>
+              </button>
+            ))}
+          </div>
 
           </>)}
           {cat === "controls" && (<>
@@ -776,23 +911,61 @@ function useMe(authed: boolean): PlayerMe | null {
   return me;
 }
 
+const LIVE_RENDER_INTERVAL_MS = 50;
+const LIVE_STALE_MS = 4000;
+
 function useLive(authed: boolean): LiveFrame | null {
-  const [live, setLive] = useState<{ d: LiveFrame; ts: number } | null>(null);
-  const [, tick] = useState(0);
+  const [live, setLive] = useState<LiveFrame | null>(null);
   useEffect(() => {
     if (!authed) {
       setLive(null);
       return;
     }
-    const off = window.isleOverlay.onLive((d) => setLive({ d, ts: Date.now() }));
-    const iv = window.setInterval(() => tick((n) => n + 1), 1000);
+    let pending: LiveFrame | null = null;
+    let flushTimer: number | null = null;
+    let staleTimer: number | null = null;
+    const flush = () => {
+      flushTimer = null;
+      if (!pending) return;
+      const next = pending;
+      pending = null;
+      setLive(next);
+      if (staleTimer != null) window.clearTimeout(staleTimer);
+      staleTimer = window.setTimeout(() => setLive(null), LIVE_STALE_MS);
+    };
+    const off = window.isleOverlay.onLive((d) => {
+      pending = d;
+      if (flushTimer == null) flushTimer = window.setTimeout(flush, LIVE_RENDER_INTERVAL_MS);
+    });
     return () => {
       off();
-      window.clearInterval(iv);
+      if (flushTimer != null) window.clearTimeout(flushTimer);
+      if (staleTimer != null) window.clearTimeout(staleTimer);
     };
   }, [authed]);
-  if (!live || Date.now() - live.ts > 4000) return null;
-  return live.d;
+  return live;
+}
+
+function useServerStatus(enabled: boolean): ServerStatus | null {
+  const [status, setStatus] = useState<ServerStatus | null>(null);
+  useEffect(() => {
+    if (!enabled) {
+      setStatus(null);
+      return;
+    }
+    let alive = true;
+    const tick = async () => {
+      const next = await window.isleOverlay.getServerStatus();
+      if (alive) setStatus(next);
+    };
+    void tick();
+    const id = window.setInterval(tick, 30000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [enabled]);
+  return status;
 }
 
 function mergeLive(me: PlayerMe | null, live: LiveFrame | null): PlayerMe | null {
@@ -820,7 +993,7 @@ export function App() {
   const [auth, setAuth] = useState<AuthInfo>({ steamId: null, authed: false });
   const [state, setState] = useState<OverlayState>({ gameDetected: false, active: false });
   const [settings, setSettings] = useState<OverlaySettings | null>(null);
-  const [panels, setPanels] = useState<Record<string, boolean>>({ heart: true, compass: true });
+  const [panels, setPanels] = useState<Record<string, boolean>>({ heart: true, compass: true, server: true });
   const [theme, setThemeState] = useState<OverlayTheme>(DEFAULT_THEME);
   const [opacity, setOpacityState] = useState(1);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -865,6 +1038,9 @@ export function App() {
   useAutoInteract();
   const me = useMe(auth.authed);
   const live = useLive(auth.authed);
+  const serverStatus = useServerStatus(
+    auth.authed && panels.server !== false && settings?.serverInfoEnabled === true,
+  );
 
   useEffect(() => {
     if (!auth.authed) {
@@ -982,7 +1158,7 @@ export function App() {
   return (
     <div className={`overlay ${settings?.hudTransparent ? "hudTransparent" : ""} ${mainOpen ? "dashboardOpen" : ""}`}>
       <TrollLayer />
-      <div style={{ display: mainOpen ? "contents" : "none" }}>
+      {mainOpen ? (
         <MainWindow
           me={view}
           theme={theme}
@@ -995,7 +1171,7 @@ export function App() {
           onSettings={() => setSettingsOpen((v) => !v)}
           onClose={() => setMainOpen(false)}
         />
-      </div>
+      ) : null}
 
       {auth.authed && !mainOpen && ticketSummary.unread > 0 ? (
         <button
@@ -1026,6 +1202,17 @@ export function App() {
         />
       ) : null}
 
+      {auth.authed && settings?.serverInfoEnabled && panels.server !== false && view ? (
+        <DraggablePanel
+          id="w_server"
+          defaultPos={{ x: Math.max(12, window.innerWidth - 292), y: 72 }}
+          settings={settings}
+          resizeLabel={t("Resize HUD")}
+        >
+          <ServerInfoWidget me={view} status={serverStatus} language={language} />
+        </DraggablePanel>
+      ) : null}
+
       {auth.authed && panels.compass && isDino ? (
         <DraggablePanel
           id="w_compass"
@@ -1033,7 +1220,11 @@ export function App() {
           settings={settings}
           resizeLabel={t("Resize HUD")}
         >
-          <CompassWidget live={live} language={language} />
+          <CompassWidget
+            live={live}
+            language={language}
+            tracking={settings?.mapTracking ?? DEFAULT_MAP_TRACKING}
+          />
         </DraggablePanel>
       ) : null}
 
@@ -1075,6 +1266,7 @@ export function App() {
             base={(settings?.apiBaseUrl ?? "https://islepilot.eu").replace(/\/+$/, "")}
             rangeIdx={Math.max(0, Math.min(3, settings?.radarRange ?? 1))}
             showLabels={settings?.radarLabels ?? false}
+            tracking={settings?.mapTracking ?? DEFAULT_MAP_TRACKING}
             shape={settings?.radarShape ?? "circle"}
             diameter={Math.max(140, Math.min(560, settings?.radarSize ?? 320))}
           />

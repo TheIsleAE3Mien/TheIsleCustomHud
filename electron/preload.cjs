@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld("isleOverlay", {
   apiGet: (pathname) => ipcRenderer.invoke("api:get", pathname),
   apiPost: (pathname, body) => ipcRenderer.invoke("api:post", pathname, body),
   apiGetFile: (pathname) => ipcRenderer.invoke("api:getfile", pathname),
+  getServerStatus: () => ipcRenderer.invoke("server:getStatus"),
 
   getMapCatalog: () => ipcRenderer.invoke("mapedit:getCatalog"),
 

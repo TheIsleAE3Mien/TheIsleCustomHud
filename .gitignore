@@ -4,8 +4,11 @@ release/
 release-next/
 release-vn*/
 release-*/
+!release-notes/
+!release-notes/**
 *.exe
 *.exe.blockmap
 *.log
 .env
 .env.*
+build.edition.json

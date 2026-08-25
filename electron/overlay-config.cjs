@@ -32,16 +32,27 @@ function dashAccelerator(value) {
   return named[value] ?? null;
 }
 
-function isGameWindowCandidate(title, imagePath) {
-  const normalizedTitle = typeof title === "string" ? title.trim() : "";
+function isGameExecutable(imagePath) {
   const normalizedPath = typeof imagePath === "string" ? imagePath.trim() : "";
-  return /(?:^|[\\/])(?:theisle|theisleclient-win64-shipping)\.exe$/i.test(normalizedPath)
-    || /^the isle(?:\s|$)/i.test(normalizedTitle);
+  return /(?:^|[\\/])(?:theisle|theisleclient-win64-shipping)\.exe$/i.test(normalizedPath);
+}
+
+function isGameWindowCandidate(title, imagePath) {
+  if (isGameExecutable(imagePath)) return true;
+
+  const normalizedPath = typeof imagePath === "string" ? imagePath.trim() : "";
+  if (normalizedPath) return false;
+
+  const normalizedTitle = typeof title === "string"
+    ? title.replace(/\s+/g, "").trim()
+    : "";
+  return /^theisle$/i.test(normalizedTitle);
 }
 
 module.exports = {
   DEFAULT_SERVER_NAME,
   dashAccelerator,
+  isGameExecutable,
   isGameWindowCandidate,
   normalizeOverlayLabel,
   normalizeRadarShape,

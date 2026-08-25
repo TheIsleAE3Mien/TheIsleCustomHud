@@ -1,7 +1,7 @@
 {
   "name": "the-isle-vn-hud",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Customizable Windows in-game HUD for The Isle",
   "author": "TheIsleAE3Mien",
   "contributors": [
@@ -64,7 +64,9 @@
     "files": [
       "dist/**",
       "electron/**",
+      "!electron/live-worker.cjs",
       "build.config.json",
+      "build.edition.json",
       "package.json"
     ],
     "extraResources": [
@@ -74,6 +76,10 @@
         "filter": [
           "**/*.json"
         ]
+      },
+      {
+        "from": "electron/live-worker.cjs",
+        "to": "workers/live-worker.cjs"
       }
     ],
     "asarUnpack": [

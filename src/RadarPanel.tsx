@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { MapPlayerShape, MapZoneShape } from "./livemap/MapCanvas";
 import { worldToNormalized, type MapCalibration } from "./livemap/calibration";
+import { isTrackedPlace, type MapTrackingSettings } from "./map-tracking";
 import { RadarView, type RadarMarker, type RadarShape } from "./RadarView";
 import type { LiveFrame } from "./preload";
 
 type MapResp = {
   calibration?: MapCalibration | null;
   pois?: MapZoneShape[];
+  categories?: { id: string; name: string }[];
   markers?: MapPlayerShape[];
   error?: string;
   status?: number;
@@ -28,6 +30,7 @@ export function RadarPanel({
   base,
   rangeIdx,
   showLabels,
+  tracking,
   shape,
   diameter,
 }: {
@@ -35,10 +38,12 @@ export function RadarPanel({
   base: string;
   rangeIdx: number;
   showLabels: boolean;
+  tracking: MapTrackingSettings;
   shape: RadarShape;
   diameter: number;
 }) {
   const [data, setData] = useState<MapResp | null>(null);
+  const hasPosition = live?.position != null;
 
   const refresh = useCallback(async () => {
     const r = await window.isleOverlay.apiGet<MapResp>("/api/overlay/map");
@@ -46,10 +51,11 @@ export function RadarPanel({
   }, []);
 
   useEffect(() => {
+    if (!hasPosition) return;
     void refresh();
     const t = setInterval(refresh, 15000);
     return () => clearInterval(t);
-  }, [refresh]);
+  }, [hasPosition, refresh]);
 
   const cal = data?.calibration ?? null;
 
@@ -68,17 +74,19 @@ export function RadarPanel({
   const markers = useMemo<RadarMarker[]>(() => {
     if (!cal) return [];
     const out: RadarMarker[] = [];
+    const categoryNames = new Map((data?.categories ?? []).map((category) => [category.id, category.name]));
     for (const p of data?.pois ?? []) {
+      if (!isTrackedPlace(p, tracking, p.categoryId ? categoryNames.get(p.categoryId) : "")) continue;
       const uv = centroidUV(cal, p.points);
       if (uv) out.push({ id: p.id, u: uv.u, v: uv.v, label: p.name, color: p.color, kind: "place", shape: p.shape, icon: p.icon });
     }
-    for (const m of data?.markers ?? []) {
+    for (const m of tracking.friends ? data?.markers ?? [] : []) {
       if (m.self) continue;
       const uv = worldToNormalized(cal, m.x, m.y);
       out.push({ id: m.steamId, u: uv.u, v: uv.v, label: m.label, color: "#7cf2a6", kind: "friend" });
     }
     return out;
-  }, [cal, data]);
+  }, [cal, data, tracking]);
 
   return (
     <div className="radarPanel dragHandle">

@@ -102,7 +102,17 @@ export function RadarView({
 
   return (
     <div style={radarWrap(D, shape)}>
-      <div style={{ position: "absolute", left: originX, top: originY, width: mapSize, height: mapSize }}>
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: mapSize,
+          height: mapSize,
+          transform: `translate3d(${originX}px, ${originY}px, 0)`,
+          willChange: "transform",
+        }}
+      >
         {["base", "water", "land"].map((l) => (
           <img
             key={l}

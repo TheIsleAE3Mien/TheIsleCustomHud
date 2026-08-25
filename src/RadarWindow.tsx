@@ -3,6 +3,7 @@ import type React from "react";
 
 import type { MapPlayerShape, MapZoneShape } from "./livemap/MapCanvas";
 import { worldToNormalized, type MapCalibration } from "./livemap/calibration";
+import { DEFAULT_MAP_TRACKING, isTrackedPlace, type MapTrackingSettings } from "./map-tracking";
 import { RadarView, type RadarMarker, type RadarShape } from "./RadarView";
 import type { LiveFrame } from "./preload";
 
@@ -11,6 +12,7 @@ type MapResp = {
   allowed?: boolean;
   calibration?: MapCalibration | null;
   pois?: MapZoneShape[];
+  categories?: { id: string; name: string }[];
   markers?: MapPlayerShape[];
   error?: string;
   status?: number;
@@ -32,15 +34,24 @@ export function RadarWindow() {
   const [live, setLive] = useState<LiveFrame | null>(null);
   const [rangeIdx, setRangeIdx] = useState(1);
   const [showLabels, setShowLabels] = useState(false);
+  const [tracking, setTracking] = useState<MapTrackingSettings>(DEFAULT_MAP_TRACKING);
   const [shape, setShape] = useState<RadarShape>("circle");
   const [size, setSize] = useState({ w: 320, h: 320 });
   const rootRef = useRef<HTMLDivElement>(null);
+  const hasPosition = live?.position != null;
 
   useEffect(() => {
-    const apply = (s: { apiBaseUrl?: string; radarRange?: number; radarLabels?: boolean; radarShape?: RadarShape }) => {
+    const apply = (s: {
+      apiBaseUrl?: string;
+      radarRange?: number;
+      radarLabels?: boolean;
+      mapTracking?: MapTrackingSettings;
+      radarShape?: RadarShape;
+    }) => {
       if (s.apiBaseUrl) setBase(s.apiBaseUrl.replace(/\/+$/, ""));
       if (typeof s.radarRange === "number") setRangeIdx(Math.max(0, Math.min(3, s.radarRange)));
       if (typeof s.radarLabels === "boolean") setShowLabels(s.radarLabels);
+      if (s.mapTracking) setTracking(s.mapTracking);
       if (s.radarShape === "circle" || s.radarShape === "square") setShape(s.radarShape);
     };
     window.isleOverlay.getSettings().then(apply);
@@ -54,10 +65,11 @@ export function RadarWindow() {
   }, []);
 
   useEffect(() => {
-    refresh();
+    if (!hasPosition) return;
+    void refresh();
     const t = setInterval(refresh, 15000);
     return () => clearInterval(t);
-  }, [refresh]);
+  }, [hasPosition, refresh]);
 
   useEffect(() => {
     const off = window.isleOverlay.onLive(setLive);
@@ -89,17 +101,19 @@ export function RadarWindow() {
   const markers = useMemo<RadarMarker[]>(() => {
     if (!cal) return [];
     const out: RadarMarker[] = [];
+    const categoryNames = new Map((data?.categories ?? []).map((category) => [category.id, category.name]));
     for (const p of data?.pois ?? []) {
+      if (!isTrackedPlace(p, tracking, p.categoryId ? categoryNames.get(p.categoryId) : "")) continue;
       const uv = centroidUV(cal, p.points);
       if (uv) out.push({ id: p.id, u: uv.u, v: uv.v, label: p.name, color: p.color, kind: "place", shape: p.shape, icon: p.icon });
     }
-    for (const m of data?.markers ?? []) {
+    for (const m of tracking.friends ? data?.markers ?? [] : []) {
       if (m.self) continue;
       const uv = worldToNormalized(cal, m.x, m.y);
       out.push({ id: m.steamId, u: uv.u, v: uv.v, label: m.label, color: "#7cf2a6", kind: "friend" });
     }
     return out;
-  }, [cal, data]);
+  }, [cal, data, tracking]);
 
   const layerBase = `${base}/maps/gateway-v0.21`;
   const diameter = Math.max(120, Math.min(size.w, size.h) - 2);

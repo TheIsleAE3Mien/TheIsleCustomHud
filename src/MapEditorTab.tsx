@@ -475,7 +475,7 @@ function MapEditor() {
           <span className="meToolInfo">{selected ? selected.name : "no selection"}</span>
         </div>
         <Canvas
-          dpr={[1, 2]}
+          dpr={[1, 1.5]}
           camera={{ position: [8, 6, 8], fov: 45, near: 0.1, far: 100000 }}
           gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
         >

@@ -2,9 +2,11 @@ const { app, BrowserWindow, globalShortcut, ipcMain, net, shell, screen, Tray, M
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const fs = require("fs");
+const { Worker } = require("worker_threads");
 const {
   DEFAULT_SERVER_NAME,
   dashAccelerator,
+  isGameExecutable,
   isGameWindowCandidate,
   normalizeOverlayLabel,
   normalizeRadarShape,
@@ -30,7 +32,7 @@ try {
 let cursorOn = false;
 let cursorKeyHeld = false;
 let dashKeyHeld = false;
-let dashOn = true;
+let dashOn = false;
 let recordTarget = "cursorKey";
 let uioStarted = false;
 let recordResolve = null;
@@ -38,18 +40,39 @@ let recordResolve = null;
 const SETTINGS_FILE = () =>
   path.join(app.getPath("userData"), "TheIsleVNHud.settings.json");
 
-const buildConfig = (() => {
+const readBuildConfig = (filename) => {
   try {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "build.config.json"), "utf8"));
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "..", filename), "utf8"));
   } catch {
     return {};
   }
-})();
+};
+
+const baseBuildConfig = readBuildConfig("build.config.json");
+const editionBuildConfig = readBuildConfig("build.edition.json");
+const buildConfig = {
+  ...baseBuildConfig,
+  ...editionBuildConfig,
+  defaultUserSettings: {
+    ...(baseBuildConfig.defaultUserSettings && typeof baseBuildConfig.defaultUserSettings === "object"
+      ? baseBuildConfig.defaultUserSettings
+      : {}),
+    ...(editionBuildConfig.defaultUserSettings && typeof editionBuildConfig.defaultUserSettings === "object"
+      ? editionBuildConfig.defaultUserSettings
+      : {}),
+  },
+};
 
 const buildString = (key, fallback) =>
   typeof buildConfig[key] === "string" && buildConfig[key].trim()
     ? buildConfig[key].trim()
     : fallback;
+
+const gameMonitoringServerId =
+  Number.isSafeInteger(buildConfig.gameMonitoringServerId) && buildConfig.gameMonitoringServerId > 0
+    ? buildConfig.gameMonitoringServerId
+    : null;
+const updateChannel = buildString("updateChannel", "latest");
 
 const configuredUserDefaults =
   buildConfig.defaultUserSettings && typeof buildConfig.defaultUserSettings === "object"
@@ -64,6 +87,18 @@ const configuredStatTheme =
   configuredTheme.stat && typeof configuredTheme.stat === "object"
     ? configuredTheme.stat
     : {};
+const configuredMapTracking =
+  configuredUserDefaults.mapTracking && typeof configuredUserDefaults.mapTracking === "object"
+    ? configuredUserDefaults.mapTracking
+    : {};
+
+const defaultMapTracking = {
+  sanctuaries: configuredMapTracking.sanctuaries !== false,
+  migration: configuredMapTracking.migration !== false,
+  patrol: configuredMapTracking.patrol !== false,
+  places: configuredMapTracking.places !== false,
+  friends: configuredMapTracking.friends !== false,
+};
 
 const defaultTheme = {
   accent: isHex(configuredTheme.accent)
@@ -85,6 +120,7 @@ const defaultSettings = {
     typeof buildConfig.overlayLabel === "string" ? buildConfig.overlayLabel : "",
   ),
   apiBaseUrl: buildString("apiBaseUrl", "https://islepilot.eu"),
+  serverInfoEnabled: gameMonitoringServerId != null,
   language: buildConfig.language === "en" ? "en" : "vi",
   languageExplicit: false,
   statsStyle:
@@ -120,6 +156,7 @@ const defaultSettings = {
       ? Math.round(configuredUserDefaults.radarRange)
       : 1,
   radarLabels: configuredUserDefaults.radarLabels === true,
+  mapTracking: defaultMapTracking,
   radarShape: normalizeRadarShape(configuredUserDefaults.radarShape ?? buildConfig.radarShape),
   radarOpen: configuredUserDefaults.radarOpen === true,
   cursorEnabled: configuredUserDefaults.cursorEnabled === true,
@@ -150,6 +187,18 @@ const normalizeTheme = (t) => {
   };
 };
 
+const normalizeMapTracking = (value) => {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    sanctuaries:
+      typeof source.sanctuaries === "boolean" ? source.sanctuaries : defaultMapTracking.sanctuaries,
+    migration: typeof source.migration === "boolean" ? source.migration : defaultMapTracking.migration,
+    patrol: typeof source.patrol === "boolean" ? source.patrol : defaultMapTracking.patrol,
+    places: typeof source.places === "boolean" ? source.places : defaultMapTracking.places,
+    friends: typeof source.friends === "boolean" ? source.friends : defaultMapTracking.friends,
+  };
+};
+
 const asStringOrNull = (v) => (typeof v === "string" && v.length > 0 ? v : null);
 
 const normalizeSettings = (raw) => {
@@ -159,6 +208,7 @@ const normalizeSettings = (raw) => {
     serverName: defaultSettings.serverName,
     overlayLabel: defaultSettings.overlayLabel,
     apiBaseUrl: defaultSettings.apiBaseUrl,
+    serverInfoEnabled: defaultSettings.serverInfoEnabled,
     language:
       s.languageExplicit === true && (s.language === "en" || s.language === "vi")
         ? s.language
@@ -189,6 +239,7 @@ const normalizeSettings = (raw) => {
         : defaultSettings.radarRange,
     radarLabels:
       typeof s.radarLabels === "boolean" ? s.radarLabels : defaultSettings.radarLabels,
+    mapTracking: normalizeMapTracking(s.mapTracking),
     radarShape: normalizeRadarShape(s.radarShape ?? defaultSettings.radarShape),
     radarOpen: typeof s.radarOpen === "boolean" ? s.radarOpen : defaultSettings.radarOpen,
     cursorEnabled:
@@ -234,17 +285,40 @@ const readRawSettings = (settingsFile) => {
   }
 };
 
-const readSettings = () => {
+let settingsCache = null;
+let settingsNeedsMigration = false;
+let pendingSettingsPayload = null;
+let settingsWriteTimer = null;
+let settingsWriteQueue = Promise.resolve();
+
+const loadSettingsFromDisk = () => {
   const current = readRawSettings(SETTINGS_FILE());
   if (current) {
     const settings = normalizeSettings(current);
     settings.overlayToken = decryptToken(settings.overlayToken);
+    if (settings.steamId && !settings.overlayToken) {
+      const fallbackSources = [
+        readRawSettings(renamedSettingsFile),
+        readRawSettings(legacySettingsFile),
+      ];
+      for (const source of fallbackSources) {
+        const sourceSteamId = typeof source?.steamId === "string" ? source.steamId.trim() : "";
+        if (sourceSteamId !== settings.steamId) continue;
+        const token = decryptToken(asStringOrNull(source?.overlayToken));
+        if (token) {
+          settings.overlayToken = token;
+          settingsNeedsMigration = true;
+          break;
+        }
+      }
+    }
     return settings;
   }
 
   const legacy = readRawSettings(legacySettingsFile);
   const renamed = readRawSettings(renamedSettingsFile);
   if (!legacy && !renamed) return { ...defaultSettings };
+  settingsNeedsMigration = true;
 
   const settings = normalizeSettings({ ...(legacy || {}), ...(renamed || {}) });
   settings.overlayToken = null;
@@ -258,26 +332,65 @@ const readSettings = () => {
   return settings;
 };
 
+const readSettings = () => {
+  if (!settingsCache) settingsCache = loadSettingsFromDisk();
+  return settingsCache;
+};
+
+const enqueueSettingsWrite = () => {
+  if (!pendingSettingsPayload) return settingsWriteQueue;
+  const payload = pendingSettingsPayload;
+  pendingSettingsPayload = null;
+  settingsWriteQueue = settingsWriteQueue
+    .catch(() => {})
+    .then(async () => {
+      await fs.promises.mkdir(path.dirname(SETTINGS_FILE()), { recursive: true });
+      await fs.promises.writeFile(SETTINGS_FILE(), payload, "utf8");
+    });
+  return settingsWriteQueue;
+};
+
+const scheduleSettingsWrite = (settings) => {
+  const onDisk = { ...settings, overlayToken: encryptToken(settings.overlayToken) };
+  pendingSettingsPayload = JSON.stringify(onDisk, null, 2);
+  if (settingsWriteTimer != null) return;
+  settingsWriteTimer = setTimeout(() => {
+    settingsWriteTimer = null;
+    void enqueueSettingsWrite();
+  }, 100);
+};
+
+const flushSettingsWrites = async () => {
+  if (settingsWriteTimer != null) {
+    clearTimeout(settingsWriteTimer);
+    settingsWriteTimer = null;
+  }
+  await enqueueSettingsWrite().catch(() => {});
+};
+
 const writeSettings = (patch) => {
   const merged = normalizeSettings({
     ...readSettings(),
     ...(patch && typeof patch === "object" ? patch : {}),
   });
-  const onDisk = { ...merged, overlayToken: encryptToken(merged.overlayToken) };
-  fs.mkdirSync(path.dirname(SETTINGS_FILE()), { recursive: true });
-  fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(onDisk, null, 2), "utf8");
+  settingsCache = merged;
+  scheduleSettingsWrite(merged);
   return merged;
 };
 
-const migrateSettingsIfNeeded = () => {
-  if (readRawSettings(SETTINGS_FILE())) return;
-  if (!fs.existsSync(legacySettingsFile) && !fs.existsSync(renamedSettingsFile)) return;
-  try {
-    writeSettings({});
-  } catch {}
+const migrateSettingsIfNeeded = async () => {
+  readSettings();
+  if (!settingsNeedsMigration) return;
+  settingsNeedsMigration = false;
+  scheduleSettingsWrite(settingsCache);
+  await flushSettingsWrites();
 };
 
-if (readSettings().compatMode) {
+const earlySettings = readRawSettings(SETTINGS_FILE())
+  || readRawSettings(renamedSettingsFile)
+  || readRawSettings(legacySettingsFile)
+  || defaultSettings;
+if (earlySettings.compatMode === true) {
   app.commandLine.appendSwitch("disable-direct-composition");
   app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
 }
@@ -294,6 +407,7 @@ const bootGraceUntil = Date.now() + 4000;
 let streamerModeActive = false;
 let lastShowTs = 0;
 let lastTopmostTs = 0;
+let lastOverlayState = { gameDetected: false, active: false, focused: false };
 
 const createWindow = () => {
   const initialSettings = readSettings();
@@ -322,7 +436,7 @@ const createWindow = () => {
       contextIsolation: true,
       nodeIntegration: false,
       devTools: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
       preload: path.join(__dirname, "preload.cjs"),
     },
   });
@@ -378,7 +492,7 @@ function openRadar() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
       devTools: false,
       preload: path.join(__dirname, "preload.cjs"),
     },
@@ -587,6 +701,34 @@ function loadNw() {
 let gameHwnd = null;
 let lastGameScanTs = 0;
 
+function findGameWindow(n) {
+  return n.findWindow((_title, imagePath) => isGameExecutable(imagePath))
+    || n.findWindow(isGameWindowCandidate);
+}
+
+function refreshGameWindow(n, now) {
+  if (gameHwnd && (!n.IsWindow(gameHwnd) || n.windowPid(gameHwnd) === process.pid)) {
+    gameHwnd = null;
+    gameBounds = null;
+    lastGameScanTs = 0;
+  }
+
+  if (now - lastGameScanTs <= 3000) return;
+  lastGameScanTs = now;
+
+  if (gameHwnd) {
+    const pid = n.windowPid(gameHwnd);
+    const title = n.windowTitle(gameHwnd);
+    const imagePath = n.processImagePath(pid);
+    if (!isGameWindowCandidate(title, imagePath)) {
+      gameHwnd = null;
+      gameBounds = null;
+    }
+  }
+
+  if (!gameHwnd) gameHwnd = findGameWindow(n);
+}
+
 function trackGame() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const n = loadNw();
@@ -595,15 +737,13 @@ function trackGame() {
   let activeIsGame = false;
   let activeIsOverlay = false;
   try {
-    if (gameHwnd && (!n.IsWindow(gameHwnd) || n.windowPid(gameHwnd) === process.pid)) gameHwnd = null;
-    if (!gameHwnd && Date.now() - lastGameScanTs > 3000) {
-      lastGameScanTs = Date.now();
-      const candidate = n.findWindow(isGameWindowCandidate);
-      gameHwnd = candidate && n.windowPid(candidate) !== process.pid ? candidate : null;
-    }
+    const now = Date.now();
+    refreshGameWindow(n, now);
     if (gameHwnd) {
       const b = n.windowBounds(gameHwnd);
       if (b && b.width > 0 && b.height > 0) gameBounds = b;
+    } else {
+      gameBounds = null;
     }
 
     const fg = n.GetForegroundWindow();
@@ -612,7 +752,7 @@ function trackGame() {
   } catch {
   }
   const shouldShow =
-    activeIsGame || activeIsOverlay || streamerModeActive || Date.now() < bootGraceUntil;
+    dashOn || activeIsGame || activeIsOverlay || streamerModeActive || Date.now() < bootGraceUntil;
   overlayFocusActive = shouldShow;
 
   if (shouldShow) {
@@ -627,11 +767,19 @@ function trackGame() {
   } else if (Date.now() - lastShowTs > 1500) {
     if (mainWindow.isVisible()) mainWindow.hide();
   }
-  mainWindow.webContents.send("overlay:state", {
-    gameDetected: gameBounds != null,
+  const nextOverlayState = {
+    gameDetected: gameHwnd != null,
     active: shouldShow,
     focused: activeIsGame || activeIsOverlay,
-  });
+  };
+  if (
+    nextOverlayState.gameDetected !== lastOverlayState.gameDetected
+    || nextOverlayState.active !== lastOverlayState.active
+    || nextOverlayState.focused !== lastOverlayState.focused
+  ) {
+    lastOverlayState = nextOverlayState;
+    mainWindow.webContents.send("overlay:state", nextOverlayState);
+  }
 }
 
 async function apiFetch(method, pathname, body) {
@@ -673,6 +821,122 @@ let liveWs = null;
 let liveBackoff = 1000;
 let liveTimer = null;
 let liveStopped = false;
+let liveWorker = null;
+
+function dispatchLiveFrame(frame) {
+  if (frame && frame.t === "live" && frame.d) {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("overlay:live", frame.d);
+    radarSend("overlay:live", frame.d);
+  } else if (frame && frame.t === "troll") {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("overlay:troll", frame);
+  } else if (frame && frame.type === "ticket") {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("overlay:ticket", frame);
+  }
+}
+
+// Renderer polls every 30 seconds. Keep the main-process cache slightly shorter
+// so every scheduled poll can observe a newly published provider snapshot.
+const SERVER_STATUS_CACHE_MS = 25000;
+let serverStatusCache = null;
+let serverStatusFetchedAt = 0;
+let serverStatusRequest = null;
+
+async function getServerStatus() {
+  if (!gameMonitoringServerId) return { configured: false };
+
+  const now = Date.now();
+  if (serverStatusCache && now - serverStatusFetchedAt < SERVER_STATUS_CACHE_MS) {
+    return serverStatusCache;
+  }
+  if (serverStatusRequest) return serverStatusRequest;
+
+  serverStatusRequest = (async () => {
+    try {
+      const response = await net.fetch(
+        `https://api.gamemonitoring.net/servers/${gameMonitoringServerId}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      const server = payload?.response;
+      if (!server || typeof server !== "object") throw new Error("Invalid response");
+
+      const next = {
+        configured: true,
+        id: gameMonitoringServerId,
+        name: typeof server.name === "string" ? server.name : null,
+        online: server.status === true,
+        playersOnline:
+          typeof server.numplayers === "number" && Number.isFinite(server.numplayers)
+            ? Math.max(0, Math.floor(server.numplayers))
+            : null,
+        maxPlayers:
+          typeof server.maxplayers === "number" && Number.isFinite(server.maxplayers)
+            ? Math.max(0, Math.floor(server.maxplayers))
+            : null,
+        lastUpdate:
+          typeof server.last_update === "number" && Number.isFinite(server.last_update)
+            ? Math.floor(server.last_update)
+            : null,
+      };
+      serverStatusCache = next;
+      serverStatusFetchedAt = Date.now();
+      return next;
+    } catch {
+      if (serverStatusCache) return { ...serverStatusCache, stale: true };
+      return { configured: true, id: gameMonitoringServerId, error: "unavailable" };
+    } finally {
+      serverStatusRequest = null;
+    }
+  })();
+
+  return serverStatusRequest;
+}
+
+function stopLiveWorker() {
+  const worker = liveWorker;
+  liveWorker = null;
+  if (worker) void worker.terminate().catch(() => {});
+}
+
+function startLiveWorker() {
+  stopLiveWorker();
+  try {
+    const workerPath = app.isPackaged
+      ? path.join(process.resourcesPath, "workers", "live-worker.cjs")
+      : path.join(__dirname, "live-worker.cjs");
+    const worker = new Worker(workerPath);
+    liveWorker = worker;
+    worker.on("message", (message) => {
+      if (worker !== liveWorker || !message) return;
+      if (message.kind === "live") dispatchLiveFrame({ t: "live", d: message.data });
+      else if (message.kind === "frame") dispatchLiveFrame(message.data);
+    });
+    worker.on("error", () => {
+      if (worker === liveWorker) liveWorker = null;
+    });
+    worker.on("exit", () => {
+      if (worker === liveWorker) liveWorker = null;
+    });
+  } catch {
+    liveWorker = null;
+  }
+}
+
+function parseLiveFrame(raw) {
+  const text = raw.toString();
+  if (liveWorker) {
+    try {
+      liveWorker.postMessage(text);
+      return;
+    } catch {
+      liveWorker = null;
+    }
+  }
+  try {
+    dispatchLiveFrame(JSON.parse(text));
+  } catch {}
+}
 
 function baseWs() {
   return baseApi().replace(/^http/i, "ws");
@@ -715,6 +979,7 @@ function connectLive() {
     } catch {}
     liveWs = null;
   }
+  startLiveWorker();
   let ws;
   try {
     ws = new WebSocket(`${baseWs()}/ows`, { headers: { Authorization: `Bearer ${token}` } });
@@ -735,20 +1000,7 @@ function connectLive() {
       }
       return;
     }
-    let frame;
-    try {
-      frame = JSON.parse(raw.toString());
-    } catch {
-      return;
-    }
-    if (frame && frame.t === "live" && frame.d) {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("overlay:live", frame.d);
-      radarSend("overlay:live", frame.d);
-    } else if (frame && frame.t === "troll") {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("overlay:troll", frame);
-    } else if (frame && frame.type === "ticket") {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("overlay:ticket", frame);
-    }
+    parseLiveFrame(raw);
   });
   ws.on("close", () => {
     if (liveWs === ws) liveWs = null;
@@ -774,6 +1026,7 @@ function stopLive() {
     } catch {}
     liveWs = null;
   }
+  stopLiveWorker();
 }
 
 ipcMain.handle("overlay:getSettings", () => {
@@ -796,7 +1049,7 @@ ipcMain.handle("overlay:setSettings", (_e, next) => {
   if (typeof next?.dashKey === "string" && merged.dashKey !== prev.dashKey) registerDashShortcut();
   return merged;
 });
-ipcMain.handle("overlay:getState", () => ({ gameDetected: gameBounds != null }));
+ipcMain.handle("overlay:getState", () => lastOverlayState);
 ipcMain.handle("overlay:mouseIgnore", (_e, ignore) => {
   if (cursorOn) return;
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -884,6 +1137,7 @@ ipcMain.handle("auth:logout", () => {
 ipcMain.handle("api:get", (_e, pathname) => apiFetch("GET", String(pathname)));
 ipcMain.handle("api:post", (_e, pathname, body) => apiFetch("POST", String(pathname), body ?? {}));
 ipcMain.handle("api:getfile", (_e, pathname) => apiGetFile(String(pathname)));
+ipcMain.handle("server:getStatus", () => getServerStatus());
 
 let mapCatalogCache = null;
 
@@ -964,8 +1218,8 @@ function handleDeepLink(rawUrl) {
   }
   const sid = parsed.searchParams.get("sid");
   const token = parsed.searchParams.get("token");
-  if (!sid || !/^\d{17}$/.test(sid)) return;
-  const saved = writeSettings({ steamId: sid, overlayToken: token || null });
+  if (!sid || !/^\d{17}$/.test(sid) || !token) return;
+  const saved = writeSettings({ steamId: sid, overlayToken: token });
   connectLive();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("auth:changed", { steamId: saved.steamId });
@@ -1008,8 +1262,8 @@ if (!gotLock) {
   });
   app.on("open-url", (_e, url) => handleDeepLink(url));
 
-  app.whenReady().then(() => {
-    migrateSettingsIfNeeded();
+  app.whenReady().then(async () => {
+    await migrateSettingsIfNeeded();
     createWindow();
     createTray();
     registerDashShortcut();
@@ -1032,6 +1286,8 @@ if (!gotLock) {
 }
 
 app.on("before-quit", () => {
+  stopLiveWorker();
+  void flushSettingsWrites();
   try {
     globalShortcut.unregisterAll();
   } catch {}
@@ -1050,6 +1306,10 @@ function initAutoUpdate() {
     autoUpdater.disableDifferentialDownload = true;
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+    if (updateChannel !== "latest") {
+      autoUpdater.channel = updateChannel;
+      autoUpdater.allowPrerelease = true;
+    }
     const emit = (payload) => {
       lastUpdaterState = payload;
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("updater:event", payload);
