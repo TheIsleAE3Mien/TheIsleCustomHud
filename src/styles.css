@@ -377,6 +377,26 @@ body {
   background: rgba(124, 242, 166, 0.16);
   border-color: var(--edge);
 }
+.settingsField {
+  display: grid;
+  gap: 6px;
+}
+.settingsTextInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+  background: var(--track);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.settingsTextInput:focus {
+  border-color: var(--phos-dim);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--phos) 14%, transparent);
+}
 .cursorKey {
   width: 100%;
   margin-top: 6px;

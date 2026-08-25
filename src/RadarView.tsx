@@ -11,6 +11,8 @@ export type RadarMarker = {
   icon?: string | null;
 };
 
+export type RadarShape = "circle" | "square";
+
 function Glyph({ kind, shape, color, r }: { kind: string; shape?: string; color: string; r: number }) {
   const stroke = "rgba(0,0,0,0.55)";
   if (kind === "friend") {
@@ -43,6 +45,7 @@ export function RadarView({
   rangeLabel,
   markers,
   showLabels,
+  shape,
 }: {
   layerBase: string;
   diameter: number;
@@ -53,6 +56,7 @@ export function RadarView({
   rangeLabel: string;
   markers: RadarMarker[];
   showLabels: boolean;
+  shape: RadarShape;
 }) {
   const D = diameter;
   const cx = D / 2;
@@ -61,14 +65,14 @@ export function RadarView({
 
   if (selfU == null || selfV == null) {
     return (
-      <div style={ringWrap(D)}>
+      <div style={radarWrap(D, shape)}>
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", textAlign: "center", padding: 24 }}>
           <div>
             <div style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 600, letterSpacing: 1, color: "var(--muted)" }}>NO SIGNAL</div>
             <div style={{ marginTop: 4, fontSize: 11, color: "var(--faint)" }}>Join a server as a dino to acquire your position.</div>
           </div>
         </div>
-        <RingsOnly D={D} />
+        <RadarGrid D={D} shape={shape} />
       </div>
     );
   }
@@ -81,10 +85,15 @@ export function RadarView({
     .map((m) => {
       const x = originX + m.u * mapSize;
       const y = originY + m.v * mapSize;
-      const d = Math.hypot(x - cx, y - cy);
-      return { m, x, y, d };
+      const dx = x - cx;
+      const dy = y - cy;
+      const d = Math.hypot(dx, dy);
+      const visible = shape === "square"
+        ? Math.abs(dx) <= R - 4 && Math.abs(dy) <= R - 4
+        : d <= R - 4;
+      return { m, x, y, d, visible };
     })
-    .filter((p) => p.d <= R - 4)
+    .filter((p) => p.visible)
     .sort((a, b) => b.d - a.d);
 
   const nearestFew = new Set(
@@ -92,7 +101,7 @@ export function RadarView({
   );
 
   return (
-    <div style={ringWrap(D)}>
+    <div style={radarWrap(D, shape)}>
       <div style={{ position: "absolute", left: originX, top: originY, width: mapSize, height: mapSize }}>
         {["base", "water", "land"].map((l) => (
           <img
@@ -105,12 +114,17 @@ export function RadarView({
         ))}
       </div>
 
-      <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 50% 50%, rgba(6,10,8,0) 48%, rgba(6,10,8,0.72) 82%, rgba(6,10,8,0.96) 100%)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", inset: 0, background: radarShade(shape), pointerEvents: "none" }} />
 
       <svg width={D} height={D} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
-        {[0.33, 0.66, 1].map((f, i) => (
-          <circle key={i} cx={cx} cy={cy} r={R * f - 1} fill="none" stroke="rgba(124,242,166,0.18)" strokeWidth={1} />
-        ))}
+        {shape === "circle"
+          ? [0.33, 0.66, 1].map((f, i) => (
+              <circle key={i} cx={cx} cy={cy} r={R * f - 1} fill="none" stroke="rgba(124,242,166,0.18)" strokeWidth={1} />
+            ))
+          : [0.33, 0.66, 1].map((f, i) => {
+              const side = D * f - 2;
+              return <rect key={i} x={(D - side) / 2} y={(D - side) / 2} width={side} height={side} rx={i === 2 ? 10 : 4} fill="none" stroke="rgba(124,242,166,0.18)" strokeWidth={1} />;
+            })}
         <line x1={cx} y1={cy - R} x2={cx} y2={cy + R} stroke="rgba(124,242,166,0.07)" strokeWidth={1} />
         <line x1={cx - R} y1={cy} x2={cx + R} y2={cy} stroke="rgba(124,242,166,0.07)" strokeWidth={1} />
 
@@ -145,32 +159,43 @@ export function RadarView({
   );
 }
 
-function RingsOnly({ D }: { D: number }) {
+function RadarGrid({ D, shape }: { D: number; shape: RadarShape }) {
   const cx = D / 2;
   const R = D / 2;
   return (
     <svg width={D} height={D} style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.5 }}>
-      {[0.33, 0.66, 1].map((f, i) => (
-        <circle key={i} cx={cx} cy={cx} r={R * f - 1} fill="none" stroke="rgba(124,242,166,0.16)" strokeWidth={1} />
-      ))}
+      {shape === "circle"
+        ? [0.33, 0.66, 1].map((f, i) => (
+            <circle key={i} cx={cx} cy={cx} r={R * f - 1} fill="none" stroke="rgba(124,242,166,0.16)" strokeWidth={1} />
+          ))
+        : [0.33, 0.66, 1].map((f, i) => {
+            const side = D * f - 2;
+            return <rect key={i} x={(D - side) / 2} y={(D - side) / 2} width={side} height={side} rx={i === 2 ? 10 : 4} fill="none" stroke="rgba(124,242,166,0.16)" strokeWidth={1} />;
+          })}
       <line x1={cx} y1={0} x2={cx} y2={D} stroke="rgba(124,242,166,0.06)" />
       <line x1={0} y1={cx} x2={D} y2={cx} stroke="rgba(124,242,166,0.06)" />
     </svg>
   );
 }
 
-function ringWrap(D: number): React.CSSProperties {
+function radarWrap(D: number, shape: RadarShape): React.CSSProperties {
   return {
     position: "relative",
     width: D,
     height: D,
-    borderRadius: "50%",
+    borderRadius: shape === "square" ? 12 : "50%",
     overflow: "hidden",
     background: "#070b09",
     border: "1px solid var(--line)",
     boxShadow: "inset 0 0 0 1px rgba(124,242,166,0.05)",
     flexShrink: 0,
   };
+}
+
+function radarShade(shape: RadarShape) {
+  return shape === "square"
+    ? "radial-gradient(circle at 50% 50%, rgba(6,10,8,0) 52%, rgba(6,10,8,0.48) 86%, rgba(6,10,8,0.88) 100%)"
+    : "radial-gradient(circle at 50% 50%, rgba(6,10,8,0) 48%, rgba(6,10,8,0.72) 82%, rgba(6,10,8,0.96) 100%)";
 }
 
 const compassStyle: React.CSSProperties = {

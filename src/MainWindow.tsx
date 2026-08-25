@@ -568,7 +568,7 @@ export function MainWindow({
             <path d="M12 2 21 7v10l-9 5-9-5V7l9-5Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
             <path d="M12 7 16 9.5v5L12 17l-4-2.5v-5L12 7Z" fill="currentColor" />
           </svg>
-          <span className="brandName">TheBurntIsle</span>
+          <span className="brandName">{settings?.serverName ?? "TheBurntIsle"}</span>
           <span className="brandSep">/</span>
           <span className="brandCtx">{TABS.find((t) => t.key === tab)?.label ?? "Dashboard"}</span>
         </span>
@@ -605,7 +605,7 @@ export function MainWindow({
             <path d="M12 2 21 7v10l-9 5-9-5V7l9-5Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
             <path d="M12 7 16 9.5v5L12 17l-4-2.5v-5L12 7Z" fill="currentColor" opacity="0.9" />
           </svg>
-          <div className="gateTtl">Sign in to TheBurntIsle</div>
+          <div className="gateTtl">Sign in to {settings?.serverName ?? "TheBurntIsle"}</div>
           <div className="gateSub">Log in with Steam to load your dino stats, garage, skins and the live map.</div>
           <button className="steamBtn" onClick={onLogin}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">

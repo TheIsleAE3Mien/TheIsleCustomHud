@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { MapPlayerShape, MapZoneShape } from "./livemap/MapCanvas";
 import { worldToNormalized, type MapCalibration } from "./livemap/calibration";
-import { RadarView, type RadarMarker } from "./RadarView";
+import { RadarView, type RadarMarker, type RadarShape } from "./RadarView";
 import type { LiveFrame } from "./preload";
 
 type MapResp = {
@@ -28,12 +28,14 @@ export function RadarPanel({
   base,
   rangeIdx,
   showLabels,
+  shape,
   diameter,
 }: {
   live: LiveFrame | null;
   base: string;
   rangeIdx: number;
   showLabels: boolean;
+  shape: RadarShape;
   diameter: number;
 }) {
   const [data, setData] = useState<MapResp | null>(null);
@@ -90,6 +92,7 @@ export function RadarPanel({
         rangeLabel={RANGE_LABEL[rangeIdx]}
         markers={markers}
         showLabels={showLabels}
+        shape={shape}
       />
     </div>
   );

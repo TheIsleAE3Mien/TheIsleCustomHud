@@ -45,6 +45,9 @@ jobs:
             throw "Tag version $tagVersion does not match package.json version $packageVersion"
           }
 
+      - name: Run unit tests
+        run: npm test
+
       - name: Type-check and build installer
         run: npm run dist -- --publish never
 

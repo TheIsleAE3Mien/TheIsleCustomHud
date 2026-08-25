@@ -4,6 +4,7 @@ export type OverlayTheme = {
 };
 
 export type OverlaySettings = {
+  serverName: string;
   apiBaseUrl: string;
   steamId: string | null;
   overlayToken: string | null;
@@ -15,6 +16,8 @@ export type OverlaySettings = {
   radarSize: number;
   radarRange: number;
   radarLabels: boolean;
+  radarShape: "circle" | "square";
+  radarOpen: boolean;
   cursorEnabled: boolean;
   cursorKey: string;
   cursorMode: "toggle" | "hold";

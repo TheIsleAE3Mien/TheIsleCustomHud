@@ -18,10 +18,11 @@ Customizable Windows in-game HUD for **The Isle**, based on
   window and hides when the game is not active.
 - Steam sign-in through a deep link; the bearer token stays in the Electron main
   process instead of being exposed to the React renderer.
-- System tray controls, dashboard hotkey, configurable cursor hotkey, and
+- System tray controls, reliable global dashboard hotkey (F8 by default), configurable cursor hotkey, and
   toggle/hold interaction modes.
 - Draggable detached widgets for stats, Prime progress, heart/health, and radar.
-- Custom accent and stat colors, opacity, streamer mode, and compatibility mode.
+- Configurable server branding, custom accent and stat colors, opacity, streamer
+  mode, and compatibility mode.
 
 ### Player dashboard and HUD
 
@@ -33,7 +34,8 @@ Customizable Windows in-game HUD for **The Isle**, based on
 
 ### Radar and live map
 
-- Floating radar/minimap with configurable size, range, and labels.
+- Floating radar/minimap with circle or square shape plus configurable size,
+  range, and labels.
 - Live player position and facing direction.
 - Full live map with named locations, category filters, and food spawn markers.
 
@@ -69,7 +71,7 @@ Customizable Windows in-game HUD for **The Isle**, based on
 - Windows x64 NSIS installer.
 - In-app update checks backed by this repository's GitHub Releases.
 - GitHub Actions validation on pushes and pull requests.
-- Automatic GitHub Release assets for version tags such as `v0.3.1`.
+- Automatic GitHub Release assets for version tags such as `v0.3.2`.
 
 ## Backend requirement
 
@@ -157,4 +159,3 @@ kept in redistributions and derivative versions.
   package metadata.
 - [TheIsleAE3Mien](https://github.com/TheIsleAE3Mien) — customization,
   repository maintenance, and release automation.
-

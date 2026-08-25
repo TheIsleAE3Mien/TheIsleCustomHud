@@ -1,7 +1,13 @@
-const { app, BrowserWindow, ipcMain, net, shell, screen, Tray, Menu, safeStorage } = require("electron");
+const { app, BrowserWindow, globalShortcut, ipcMain, net, shell, screen, Tray, Menu, safeStorage } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const fs = require("fs");
+const {
+  DEFAULT_SERVER_NAME,
+  dashAccelerator,
+  normalizeRadarShape,
+  normalizeServerName,
+} = require("./overlay-config.cjs");
 
 app.setPath("userData", path.join(app.getPath("appData"), "isle-overlay"));
 
@@ -28,6 +34,7 @@ const defaultTheme = {
 };
 
 const defaultSettings = {
+  serverName: DEFAULT_SERVER_NAME,
   apiBaseUrl: "https://islepilot.eu",
   steamId: null,
   overlayToken: null,
@@ -39,6 +46,7 @@ const defaultSettings = {
   radarSize: 320,
   radarRange: 1,
   radarLabels: false,
+  radarShape: "circle",
   radarOpen: false,
   cursorEnabled: false,
   cursorKey: "Insert",
@@ -71,6 +79,7 @@ const normalizeSettings = (raw) => {
   const s = raw && typeof raw === "object" ? raw : {};
   const steamIdRaw = typeof s.steamId === "string" ? s.steamId.trim() : "";
   return {
+    serverName: normalizeServerName(s.serverName),
     apiBaseUrl: asString(s.apiBaseUrl, defaultSettings.apiBaseUrl),
     steamId: /^\d{17}$/.test(steamIdRaw) ? steamIdRaw : null,
     overlayToken: asStringOrNull(s.overlayToken),
@@ -91,6 +100,7 @@ const normalizeSettings = (raw) => {
         ? Math.round(s.radarRange)
         : 1,
     radarLabels: Boolean(s.radarLabels),
+    radarShape: normalizeRadarShape(s.radarShape),
     radarOpen: Boolean(s.radarOpen),
     cursorEnabled: Boolean(s.cursorEnabled),
     cursorKey: typeof s.cursorKey === "string" && s.cursorKey ? s.cursorKey : "Insert",
@@ -162,14 +172,15 @@ let lastShowTs = 0;
 let lastTopmostTs = 0;
 
 const createWindow = () => {
-  streamerModeActive = readSettings().streamerMode;
+  const initialSettings = readSettings();
+  streamerModeActive = initialSettings.streamerMode;
   const primary = screen.getPrimaryDisplay();
   mainWindow = new BrowserWindow({
     x: primary.bounds.x,
     y: primary.bounds.y,
     width: primary.bounds.width,
     height: primary.bounds.height,
-    title: "TheBurntIsle Overlay",
+    title: `${initialSettings.serverName} Overlay`,
     frame: false,
     transparent: true,
     backgroundColor: "#00000000",
@@ -303,18 +314,45 @@ function toggleDash() {
 }
 
 let tray = null;
+let dashShortcutAccelerator = null;
+let dashShortcutRegistered = false;
+
+function refreshBranding(settings = readSettings()) {
+  const title = `${settings.serverName} Overlay`;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(title);
+  if (!tray) return;
+  tray.setToolTip(title);
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Show / hide dashboard", click: () => toggleDash() },
+      { type: "separator" },
+      { label: `Quit ${title}`, click: () => app.quit() },
+    ]),
+  );
+}
+
+function registerDashShortcut() {
+  if (!app.isReady()) return false;
+  if (dashShortcutAccelerator) globalShortcut.unregister(dashShortcutAccelerator);
+  dashShortcutAccelerator = null;
+  dashShortcutRegistered = false;
+  const accelerator = dashAccelerator(readSettings().dashKey);
+  if (!accelerator) return false;
+  try {
+    dashShortcutRegistered = globalShortcut.register(accelerator, () => {
+      if (!licenseBlocked) toggleDash();
+    });
+    if (dashShortcutRegistered) dashShortcutAccelerator = accelerator;
+  } catch {
+    dashShortcutRegistered = false;
+  }
+  return dashShortcutRegistered;
+}
 
 function createTray() {
   try {
     tray = new Tray(path.join(__dirname, "tray.ico"));
-    tray.setToolTip("TheBurntIsle Overlay");
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: "Show / hide dashboard", click: () => toggleDash() },
-        { type: "separator" },
-        { label: "Quit TheBurntIsle Overlay", click: () => app.quit() },
-      ]),
-    );
+    refreshBranding();
     tray.on("double-click", () => toggleDash());
   } catch {
     tray = null;
@@ -350,14 +388,14 @@ function startCursorHook() {
     if (recordResolve) {
       const name = keyNameForCode(e.keycode);
       writeSettings({ [recordTarget]: name });
+      if (recordTarget === "dashKey") registerDashShortcut();
       const r = recordResolve;
       recordResolve = null;
       r(name);
       return;
     }
     if (licenseBlocked) return;
-    if (!overlayFocusActive) return;
-    const dashCode = cursorCodeFrom(readSettings().dashKey);
+    const dashCode = dashShortcutRegistered ? null : cursorCodeFrom(readSettings().dashKey);
     if (dashCode != null && e.keycode === dashCode) {
       if (!dashKeyHeld) {
         dashKeyHeld = true;
@@ -365,6 +403,7 @@ function startCursorHook() {
       }
       return;
     }
+    if (!overlayFocusActive) return;
     const code = currentCursorCode();
     if (code == null || e.keycode !== code) return;
     if (cursorKeyHeld) return;
@@ -625,6 +664,9 @@ ipcMain.handle("overlay:setSettings", (_e, next) => {
     }
     mainWindow.webContents.send("settings:changed", merged);
   }
+  radarSend("settings:changed", merged);
+  if (typeof next?.dashKey === "string" && merged.dashKey !== prev.dashKey) registerDashShortcut();
+  if (typeof next?.serverName === "string" && merged.serverName !== prev.serverName) refreshBranding(merged);
   return merged;
 });
 ipcMain.handle("overlay:getState", () => ({ gameDetected: gameBounds != null }));
@@ -837,6 +879,7 @@ if (!gotLock) {
   app.whenReady().then(() => {
     createWindow();
     createTray();
+    registerDashShortcut();
     const boot = readSettings();
     mainWindow.setOpacity(boot.opacity);
     connectLive();
@@ -856,6 +899,9 @@ if (!gotLock) {
 }
 
 app.on("before-quit", () => {
+  try {
+    globalShortcut.unregisterAll();
+  } catch {}
   try {
     if (uio && uioStarted) uio.uIOhook.stop();
   } catch {}

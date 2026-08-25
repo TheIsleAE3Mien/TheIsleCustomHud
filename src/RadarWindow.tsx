@@ -3,7 +3,7 @@ import type React from "react";
 
 import type { MapPlayerShape, MapZoneShape } from "./livemap/MapCanvas";
 import { worldToNormalized, type MapCalibration } from "./livemap/calibration";
-import { RadarView, type RadarMarker } from "./RadarView";
+import { RadarView, type RadarMarker, type RadarShape } from "./RadarView";
 import type { LiveFrame } from "./preload";
 
 type MapResp = {
@@ -32,14 +32,16 @@ export function RadarWindow() {
   const [live, setLive] = useState<LiveFrame | null>(null);
   const [rangeIdx, setRangeIdx] = useState(1);
   const [showLabels, setShowLabels] = useState(false);
+  const [shape, setShape] = useState<RadarShape>("circle");
   const [size, setSize] = useState({ w: 320, h: 320 });
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const apply = (s: { apiBaseUrl?: string; radarRange?: number; radarLabels?: boolean }) => {
+    const apply = (s: { apiBaseUrl?: string; radarRange?: number; radarLabels?: boolean; radarShape?: RadarShape }) => {
       if (s.apiBaseUrl) setBase(s.apiBaseUrl.replace(/\/+$/, ""));
       if (typeof s.radarRange === "number") setRangeIdx(Math.max(0, Math.min(3, s.radarRange)));
       if (typeof s.radarLabels === "boolean") setShowLabels(s.radarLabels);
+      if (s.radarShape === "circle" || s.radarShape === "square") setShape(s.radarShape);
     };
     window.isleOverlay.getSettings().then(apply);
     const off = window.isleOverlay.onSettingsChanged(apply);
@@ -143,6 +145,7 @@ export function RadarWindow() {
           rangeLabel={RANGE_LABEL[rangeIdx]}
           markers={markers}
           showLabels={showLabels}
+          shape={shape}
         />
       </div>
     </div>

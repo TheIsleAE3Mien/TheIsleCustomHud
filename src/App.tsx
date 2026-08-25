@@ -30,7 +30,7 @@ function applyTheme(t: OverlayTheme) {
   r.setProperty("--phos-dim", t.accent + "77");
 }
 
-function BootScreen({ onDone }: { onDone: () => void }) {
+function BootScreen({ onDone, serverName }: { onDone: () => void; serverName: string }) {
   const [leaving, setLeaving] = useState(false);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
@@ -46,7 +46,7 @@ function BootScreen({ onDone }: { onDone: () => void }) {
     <div className={`boot ${leaving ? "leaving" : ""}`}>
       <div className="bootMark">
         <div className="bootLogo">
-          THEBURNT<span>ISLE</span>
+          {serverName}
         </div>
         <div className="bootSub">OVERLAY · v{__APP_VERSION__}</div>
         <div className="bootBar">
@@ -246,6 +246,7 @@ function SettingsPanel({
   const [radarSize, setRadarSize] = useState(settings?.radarSize ?? 320);
   const [radarRange, setRadarRange] = useState(settings?.radarRange ?? 1);
   const [radarLabels, setRadarLabels] = useState(settings?.radarLabels ?? false);
+  const [radarShape, setRadarShape] = useState<"circle" | "square">(settings?.radarShape ?? "circle");
   const RANGE_LABELS = ["CLOSE", "MID", "FAR", "MAX"];
   const [cursorEnabled, setCursorEnabled] = useState(settings?.cursorEnabled ?? false);
   const [cursorKey, setCursorKey] = useState(settings?.cursorKey ?? "Insert");
@@ -277,6 +278,11 @@ function SettingsPanel({
   const [cat, setCat] = useState("widgets");
   const [streamerMode, setStreamerMode] = useState(settings?.streamerMode ?? false);
   const [compatMode, setCompatMode] = useState(settings?.compatMode ?? false);
+  const [serverName, setServerName] = useState(settings?.serverName ?? "TheBurntIsle");
+  async function commitServerName() {
+    const merged = await window.isleOverlay.setSettings({ serverName });
+    setServerName(merged.serverName);
+  }
   useEffect(() => {
     void window.isleOverlay.getSettings().then((s) => {
       setStreamerMode(Boolean(s.streamerMode));
@@ -323,7 +329,7 @@ function SettingsPanel({
           </>)}
           {cat === "radar" && (<>
           <div className="secLabel">live radar</div>
-          <div className="hint">a floating minimap that follows you in-game. drag the circle to move it</div>
+          <div className="hint">a floating minimap that follows you in-game. drag the minimap to move it</div>
           <button className={`radarToggle ${radarOpen ? "on" : ""}`} onClick={toggleRadar}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <circle cx="12" cy="12" r="9" />
@@ -360,6 +366,23 @@ function SettingsPanel({
                 }}
               >
                 {lbl}
+              </button>
+            ))}
+          </div>
+
+          <div className="hint" style={{ marginTop: 6 }}>shape</div>
+          <div className="featRow">
+            {(["circle", "square"] as const).map((shape) => (
+              <button
+                key={shape}
+                className={`chip ${radarShape === shape ? "on" : ""}`}
+                aria-pressed={radarShape === shape}
+                onClick={() => {
+                  setRadarShape(shape);
+                  void window.isleOverlay.setSettings({ radarShape: shape });
+                }}
+              >
+                {shape.toUpperCase()}
               </button>
             ))}
           </div>
@@ -431,7 +454,7 @@ function SettingsPanel({
           </div>
 
           <div className="secLabel">dashboard hotkey</div>
-          <div className="hint">show/hide the dashboard and the cursor together with one key</div>
+          <div className="hint">global shortcut: show/hide the dashboard and cursor even while the game has focus</div>
           <div className="hint" style={{ marginTop: 6 }}>key · {dashKey}</div>
           <div className="featRow" style={{ flexWrap: "wrap" }}>
             {CURSOR_KEYS.map((k) => (
@@ -456,7 +479,7 @@ function SettingsPanel({
           <div className="secLabel">OBS / streamer mode</div>
           <div className="hint">
             Makes this overlay a normal, capturable window so it shows up in OBS. Add a
-            "Window Capture" source and pick "TheBurntIsle Overlay".
+            "Window Capture" source and pick "{serverName} Overlay".
           </div>
           <div className="featRow">
             <button
@@ -477,6 +500,23 @@ function SettingsPanel({
 
           </>)}
           {cat === "appearance" && (<>
+          <div className="secLabel">server name</div>
+          <label className="settingsField" htmlFor="server-name">
+            <span className="hint">Displayed in the overlay title and branding</span>
+            <input
+              id="server-name"
+              className="settingsTextInput"
+              value={serverName}
+              maxLength={48}
+              spellCheck={false}
+              onChange={(e) => setServerName(e.target.value)}
+              onBlur={() => void commitServerName()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+            />
+          </label>
+
           <div className="secLabel">theme</div>
           <div className="presetRow">
             <button className="tbtn ghost" onClick={() => onTheme(DEFAULT_THEME)}>Default</button>
@@ -539,7 +579,7 @@ function SettingsPanel({
             </button>
           </div>
           <div className="secLabel">about</div>
-          <div className="hint">TheBurntIsle Overlay · v{__APP_VERSION__}</div>
+          <div className="hint">{serverName} Overlay · v{__APP_VERSION__}</div>
           <div className="hint">Coded by YannikAufDie1</div>
           </>)}
           </div>
@@ -731,7 +771,7 @@ export function App() {
 
   if (!booted) {
     return (
-      <BootScreen onDone={() => setBooted(true)} />
+      <BootScreen serverName={settings?.serverName ?? "TheBurntIsle"} onDone={() => setBooted(true)} />
     );
   }
 
@@ -757,7 +797,7 @@ export function App() {
         <div className="streamerBox">
           <div className="streamerBoxTitle">Streamer setup</div>
           <div className="streamerBoxHint">
-            TheBurntIsle Overlay is capturable. Add a Window Capture in OBS and pick this
+            {settings?.serverName ?? "TheBurntIsle"} Overlay is capturable. Add a Window Capture in OBS and pick this
             window, then tab back into the game.
           </div>
         </div>
@@ -833,6 +873,7 @@ export function App() {
             base={(settings?.apiBaseUrl ?? "https://islepilot.eu").replace(/\/+$/, "")}
             rangeIdx={Math.max(0, Math.min(3, settings?.radarRange ?? 1))}
             showLabels={settings?.radarLabels ?? false}
+            shape={settings?.radarShape ?? "circle"}
             diameter={Math.max(140, Math.min(560, settings?.radarSize ?? 320))}
           />
         </DraggablePanel>
@@ -844,7 +885,7 @@ export function App() {
         title={mainOpen ? "hide dashboard" : "show dashboard"}
       >
         <span className={`sig ${state.gameDetected ? "on" : "off"}`} />
-        {mainOpen ? "TheBurntIsle" : "Dashboard"}
+        {mainOpen ? (settings?.serverName ?? "TheBurntIsle") : "Dashboard"}
       </button>
     </div>
   );
