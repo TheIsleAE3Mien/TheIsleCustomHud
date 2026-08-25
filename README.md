@@ -16,17 +16,24 @@ open or close the dashboard; the HUD remains visible while you play.
 
 ## HUD preview
 
-### Movable Prime and circular stat widgets
+### Full in-game HUD layout
 
-![TheIsleVNHud Prime and circular stat widgets](docs/images/hud-prime-and-stats.png)
+The minimap, Prime checklist, compass, circular stats, and other HUD widgets stay
+visible during gameplay. Open the dashboard with `F8` to drag each widget or
+freely change its size and scale.
+
+![TheIsleVNHud full in-game HUD layout](docs/images/hud-prime-and-stats.png)
 
 ### Circular health, hunger, thirst, stamina, and growth indicators
 
 ![TheIsleVNHud circular stat HUD](docs/images/hud-circular-stats.png)
 
-### Smooth compass with nearby locations and distance
+### Smooth compass with locations, distances, and friends
 
-![TheIsleVNHud location compass](docs/images/hud-compass.png)
+The compass displays nearby named locations with distance and also keeps friend
+names visible with a `BẠN` marker and their current distance.
+
+![TheIsleVNHud compass showing locations, distance, and a friend](docs/images/hud-compass.png)
 
 ## Features
 
