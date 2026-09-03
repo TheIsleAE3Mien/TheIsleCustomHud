@@ -151,6 +151,9 @@ npm run dev
 npm run typecheck
 ```
 
+Read [AGENTS.md](AGENTS.md) before changing edition boundaries, authentication,
+packaging or publishing behavior.
+
 ### Build defaults
 
 Edit `build.config.json` before packaging to customize the defaults used by a
@@ -221,6 +224,14 @@ Generic releases never receive that server ID or widget.
 Server-specific development is maintained on the `ae3mien` branch. The `main`
 branch remains the generic edition with `gameMonitoringServerId: null`; the
 `ae3mien` branch enables the AE3Miền server ID and updater channel directly.
+
+## Repository hygiene
+
+Git keeps source, docs, edition definitions, required assets and release notes.
+`node_modules`, `dist`, `release`, every generated `release-*` directory,
+installer, blockmap, log, local environment file and `build.edition.json` are
+local output. Rebuild them when needed; do not store repeated unpacked Electron
+applications in Git history.
 
 ## Syncing upstream
 
